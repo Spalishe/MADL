@@ -9,13 +9,15 @@ Info: file format is created for easier handling of animated rigs. This includes
 ███╗        ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║        ███║
 ╚══╝        ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝        ╚══╝
 
-0x00    4    Magic number                 0x6d 0x61 0x64 0x6c (MADL)
-0x04    1    Version                      0x01 (1)
-0x05    1    Endianess                    0x00 (Little Endian)
-0x06    4    Rig Header Start
-0x0A    4    Static Obj Header Start
-0x0E    4    Dynamic Verx Header Start
-0x12	4	 Rig bones string table Start
+0x00    4     h_mn		     Magic number                 0x6d 0x61 0x64 0x6c (MADL)
+0x04    1     h_ver		     Version                      0x01 (1)
+0x05    1     h_end		     Endianess                    0x00 (Little Endian)
+0x06    4     h_rhs		     Rig Header Start
+0x0A    4     h_smh	      	 Static Mesh Header Start
+0x0E    4     h_dvh		     Dynamic Vertex Header Start
+
+0x12	4	  h_rbst	     Rig bones string table Start
+0x16	4	  h_smsdt	     Static Mesh string data table Start
 
 
 ███╗        ██████╗ ██╗ ██████╗     ██╗  ██╗███████╗ █████╗ ██████╗ ███████╗██████╗         ███╗
@@ -27,19 +29,37 @@ Info: file format is created for easier handling of animated rigs. This includes
 
 // NOTE: All bone data must be writen at T/A-Pose
 
-0x00	2	Bone index
-0x02	12  Bone position relative to parent bone
-0x0E	12  Bone rotation relative to parent bone
-0x1A	12  Reserved
-0x26	4   Bone name position relative to Rig bones string table
-0x2A	2   Bone name length
-0x2C	2	Bone parent index
+0x00	2	  boneindx       Bone index
+0x02	12    bonepos        Bone position relative to parent bone
+0x0E	12    boneang        Bone rotation relative to parent bone
+0x1A	12    reserved       Reserved
+0x26	4     bn_offset      Bone name position relative to Rig bones string table
+0x2A	2     bn_length      Bone name length
+0x2C	2	  bparentindx    Bone parent index
 
 
-███╗        ███████╗████████╗ █████╗ ████████╗██╗ ██████╗     ██████╗ ██████╗      ██╗    ██╗  ██╗███████╗ █████╗ ██████╗ ███████╗██████╗         ███╗
-██╔╝        ██╔════╝╚══██╔══╝██╔══██╗╚══██╔══╝██║██╔════╝    ██╔═══██╗██╔══██╗     ██║    ██║  ██║██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗        ╚██║
-██║         ███████╗   ██║   ███████║   ██║   ██║██║         ██║   ██║██████╔╝     ██║    ███████║█████╗  ███████║██║  ██║█████╗  ██████╔╝         ██║
-██║         ╚════██║   ██║   ██╔══██║   ██║   ██║██║         ██║   ██║██╔══██╗██   ██║    ██╔══██║██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗         ██║
-███╗        ███████║   ██║   ██║  ██║   ██║   ██║╚██████╗    ╚██████╔╝██████╔╝╚█████╔╝    ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║        ███║
-╚══╝        ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝     ╚═════╝ ╚═════╝  ╚════╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝        ╚══╝
+███╗        ███████╗████████╗ █████╗ ████████╗██╗ ██████╗    ███╗   ███╗███████╗███████╗██╗  ██╗    ██╗  ██╗███████╗ █████╗ ██████╗ ███████╗██████╗         ███╗
+██╔╝        ██╔════╝╚══██╔══╝██╔══██╗╚══██╔══╝██║██╔════╝    ████╗ ████║██╔════╝██╔════╝██║  ██║    ██║  ██║██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗        ╚██║
+██║         ███████╗   ██║   ███████║   ██║   ██║██║         ██╔████╔██║█████╗  ███████╗███████║    ███████║█████╗  ███████║██║  ██║█████╗  ██████╔╝         ██║
+██║         ╚════██║   ██║   ██╔══██║   ██║   ██║██║         ██║╚██╔╝██║██╔══╝  ╚════██║██╔══██║    ██╔══██║██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗         ██║
+███╗        ███████║   ██║   ██║  ██║   ██║   ██║╚██████╗    ██║ ╚═╝ ██║███████╗███████║██║  ██║    ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║        ███║
+╚══╝        ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝    ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝        ╚══╝
 
+0x00	2     mindx          Mesh index
+0x02	2	  pboneindx      Parent bone index
+0x04	4	  st_offset      Static Mesh data index relative to Static Mesh string data table
+
+
+███╗        ██████╗ ██╗   ██╗███╗   ██╗ █████╗ ███╗   ███╗██╗ ██████╗    ██╗   ██╗███████╗██████╗ ████████╗███████╗██╗  ██╗    ██╗  ██╗███████╗ █████╗ ██████╗ ███████╗██████╗         ███╗
+██╔╝        ██╔══██╗╚██╗ ██╔╝████╗  ██║██╔══██╗████╗ ████║██║██╔════╝    ██║   ██║██╔════╝██╔══██╗╚══██╔══╝██╔════╝╚██╗██╔╝    ██║  ██║██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗        ╚██║
+██║         ██║  ██║ ╚████╔╝ ██╔██╗ ██║███████║██╔████╔██║██║██║         ██║   ██║█████╗  ██████╔╝   ██║   █████╗   ╚███╔╝     ███████║█████╗  ███████║██║  ██║█████╗  ██████╔╝         ██║
+██║         ██║  ██║  ╚██╔╝  ██║╚██╗██║██╔══██║██║╚██╔╝██║██║██║         ╚██╗ ██╔╝██╔══╝  ██╔══██╗   ██║   ██╔══╝   ██╔██╗     ██╔══██║██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗         ██║
+███╗        ██████╔╝   ██║   ██║ ╚████║██║  ██║██║ ╚═╝ ██║██║╚██████╗     ╚████╔╝ ███████╗██║  ██║   ██║   ███████╗██╔╝ ██╗    ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║        ███║
+╚══╝        ╚═════╝    ╚═╝   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝ ╚═════╝      ╚═══╝  ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝        ╚══╝
+
+0x00	1	  bcout          Bone count
+0x01	1	  bind           Bone index[bcout]
+0x04	4	  bweight        Bone weight[bcout]
+0x10	12	  vertpos        Vertex Position
+0x1C	12	  vertnormal     Vertex Normal
+0x28	8	  verttexcord    Vertex TexCoord
