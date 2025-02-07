@@ -29,31 +29,31 @@ struct mbone_st {
 } 
 
 struct mstmesh_st {
-	int				struct_size							// This struct size
+	int				struct_size							// This struct size.
 	int				index;								// Static mesh index.
 	char			name[64];							// Static mesh name, padding with null bytes.
-	byte			parented;							// Is parented to the bone, 0 if not, anything else is true
-	int				boneIndex;							// Parented bone index, 0 if mesh not parented
-	Vector			position;							// Static mesh position relative to origin, (0,0,0) if parented
-	Vector			angle;								// Static mesh rotation relative to origin, (0,0,0) if parented
-	int				vertices_count;						// Static mesh vertices count
-	m_stvert_st		vertices[vertices_count];			// Vertices data
-	int				texture;							// Texture index
+	byte			parented;							// Is parented to the bone, 0 if not, anything else is true.
+	int				boneIndex;							// Parented bone index, 0 if mesh not parented.
+	Vector			position;							// Static mesh position relative to origin, (0,0,0) if parented.
+	Vector			angle;								// Static mesh rotation relative to origin, (0,0,0) if parented.
+	int				vertices_count;						// Static mesh vertices count.
+	m_stvert_st		vertices[vertices_count];			// Vertices data.
+	int				texture;							// Texture index.
 }
 
 // Exactly 32 bytes
 struct m_stvert_st {
-	Vector			vert_position;						// Vertex Position
-	Vector			vert_normal;						// Vertex Normal
-	Vector2D		vert_textcord;						// Vertex Texture Coordinates
+	Vector			vert_position;						// Vertex Position.
+	Vector			vert_normal;						// Vertex Normal.
+	Vector2D		vert_textcord;						// Vertex Texture Coordinates.
 }
 
 struct mdynvertex_st {
-	int				struct_size							// This struct size
-	byte			numbones;							// Count of bones
-	float			weight[numbones];					// Vertex weights per each bone
-	int				bone[numbones];						// Bones indexes
-	Vector			vert_position;						// Vertex Position
-	Vector			vert_normal;						// Vertex Normal
-	Vector2D		vert_textcord;						// Vertex Texture Coordinates
+	int				struct_size							// This struct size.
+	byte			numbones;							// Count of bones.
+	float			weight[numbones];					// Vertex weights per each bone.
+	int				bone[numbones];						// Bones indexes.
+	Vector			vert_position;						// Vertex Position.
+	Vector			vert_normal;						// Vertex Normal.
+	Vector2D		vert_textcord;						// Vertex Texture Coordinates.
 }

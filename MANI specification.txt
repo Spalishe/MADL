@@ -1,0 +1,23 @@
+MANI File Format v1 Specification
+Info: Support file for MADL, containing animation data
+
+struct mtex_st {
+	int 			id;									// Model format id, must be "MANI" (0x6D,0x61,0x6e,0x69)
+	int				version;							// Format version, currently is '1' (0x01,0x00,0x00,0x00)
+	int				checksum;							// Must be same in MADL, MPHY and in MTEX to properly load!
+	
+	int				anims_count;						// Number of data sections.
+	int				anims_offset;						// Offset to first manidata_st.
+}
+
+struct manidata_st {
+	int				index;								// Animation index.
+	char			name[64];							// Animation name, padding with nulls.
+	int				frames;								// Frames count.
+	byte			fps;								// Speed, frames per second.
+	mframes_st		data[frames];						// Frames data.
+}
+
+struct mframes_st {
+	mbone_st		bone[bone_count];					// Bone data.
+}
