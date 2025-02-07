@@ -1,65 +1,58 @@
 MADL File Format v1 Specification
 Info: file format is created for easier handling of animated rigs. This includes games/programs that can't handle animated meshes, but can generate it on runtime / create from table.
 
+// Exactly 100 bytes
+struct madl_st {
+	int 			id;									// Model format id, must be "MADL" (0x6D,0x61,0x64,0x6c)
+	int				version;							// Format version, currently is '1' (0x01,0x00,0x00,0x00)
+	int				checksum;							// Must be same in MPHY, MTEX and in MANI to properly load!
+	char			name[64];							// The internal name of the model, padding with null bytes.
+														// Typically "my_model.madl" will have an internal name of "my_model"
+														
+	int				bone_count;							// Number of data sections.
+	int				bone_offset;						// Offset to first mbone_st.
+	
+	int				static_mesh_count;
+	int				static_mesh_offset; 				// See mstmesh_st.
+	
+	int				dvertx_count;
+	int				dvertx_offset;						// See mdynvertex_st.
+}
 
-███╗        ██╗  ██╗███████╗ █████╗ ██████╗ ███████╗██████╗         ███╗
-██╔╝        ██║  ██║██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗        ╚██║
-██║         ███████║█████╗  ███████║██║  ██║█████╗  ██████╔╝         ██║
-██║         ██╔══██║██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗         ██║
-███╗        ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║        ███║
-╚══╝        ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝        ╚══╝
+// Exactly 96 bytes
+struct mbone_st {
+	int				index;								// Bone index.
+	char			name[64];							// Bone name, padding with null bytes.
+	int				parent;								// Bone parent index.
+	Vector			bone_position;						// Bone position relative to parent bone.
+	Vector			bone_angle;							// Bone rotation relative to parent bone.
+} 
 
-0x00    4     h_mn		     Magic number                 0x6d 0x61 0x64 0x6c (MADL)
-0x04    1     h_ver		     Version                      0x01 (1)
-0x05    1     h_end		     Endianess                    0x00 (Little Endian)
-0x06    4     h_rhs		     Rig Header Start
-0x0A    4     h_smh	      	 Static Mesh Header Start
-0x0E    4     h_dvh		     Dynamic Vertex Header Start
+struct mstmesh_st {
+	int				struct_size							// This struct size
+	int				index;								// Static mesh index.
+	char			name[64];							// Static mesh name, padding with null bytes.
+	byte			parented;							// Is parented to the bone, 0 if not, anything else is true
+	int				boneIndex;							// Parented bone index, 0 if mesh not parented
+	Vector			position;							// Static mesh position relative to origin, (0,0,0) if parented
+	Vector			angle;								// Static mesh rotation relative to origin, (0,0,0) if parented
+	int				vertices_count;						// Static mesh vertices count
+	m_stvert_st		vertices[vertices_count];			// Vertices data
+}
 
-0x12	4	  h_rbst	     Rig bones string table Start
-0x16	4	  h_smsdt	     Static Mesh string data table Start
+// Exactly 32 bytes
+struct m_stvert_st {
+	Vector			vert_position;						// Vertex Position
+	Vector			vert_normal;						// Vertex Normal
+	Vector2D		vert_textcord;						// Vertex Texture Coordinates
+}
 
-
-███╗        ██████╗ ██╗ ██████╗     ██╗  ██╗███████╗ █████╗ ██████╗ ███████╗██████╗         ███╗
-██╔╝        ██╔══██╗██║██╔════╝     ██║  ██║██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗        ╚██║
-██║         ██████╔╝██║██║  ███╗    ███████║█████╗  ███████║██║  ██║█████╗  ██████╔╝         ██║
-██║         ██╔══██╗██║██║   ██║    ██╔══██║██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗         ██║
-███╗        ██║  ██║██║╚██████╔╝    ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║        ███║
-╚══╝        ╚═╝  ╚═╝╚═╝ ╚═════╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝        ╚══╝
-
-// NOTE: All bone data must be writen at T/A-Pose
-
-0x00	2	  boneindx       Bone index
-0x02	12    bonepos        Bone position relative to parent bone
-0x0E	12    boneang        Bone rotation relative to parent bone
-0x1A	12    reserved       Reserved
-0x26	4     bn_offset      Bone name position relative to Rig bones string table
-0x2A	2     bn_length      Bone name length
-0x2C	2	  bparentindx    Bone parent index
-
-
-███╗        ███████╗████████╗ █████╗ ████████╗██╗ ██████╗    ███╗   ███╗███████╗███████╗██╗  ██╗    ██╗  ██╗███████╗ █████╗ ██████╗ ███████╗██████╗         ███╗
-██╔╝        ██╔════╝╚══██╔══╝██╔══██╗╚══██╔══╝██║██╔════╝    ████╗ ████║██╔════╝██╔════╝██║  ██║    ██║  ██║██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗        ╚██║
-██║         ███████╗   ██║   ███████║   ██║   ██║██║         ██╔████╔██║█████╗  ███████╗███████║    ███████║█████╗  ███████║██║  ██║█████╗  ██████╔╝         ██║
-██║         ╚════██║   ██║   ██╔══██║   ██║   ██║██║         ██║╚██╔╝██║██╔══╝  ╚════██║██╔══██║    ██╔══██║██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗         ██║
-███╗        ███████║   ██║   ██║  ██║   ██║   ██║╚██████╗    ██║ ╚═╝ ██║███████╗███████║██║  ██║    ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║        ███║
-╚══╝        ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝    ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝        ╚══╝
-
-0x00	2     mindx          Mesh index
-0x02	2	  pboneindx      Parent bone index
-0x04	4	  st_offset      Static Mesh data index relative to Static Mesh string data table
-
-
-███╗        ██████╗ ██╗   ██╗███╗   ██╗ █████╗ ███╗   ███╗██╗ ██████╗    ██╗   ██╗███████╗██████╗ ████████╗███████╗██╗  ██╗    ██╗  ██╗███████╗ █████╗ ██████╗ ███████╗██████╗         ███╗
-██╔╝        ██╔══██╗╚██╗ ██╔╝████╗  ██║██╔══██╗████╗ ████║██║██╔════╝    ██║   ██║██╔════╝██╔══██╗╚══██╔══╝██╔════╝╚██╗██╔╝    ██║  ██║██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗        ╚██║
-██║         ██║  ██║ ╚████╔╝ ██╔██╗ ██║███████║██╔████╔██║██║██║         ██║   ██║█████╗  ██████╔╝   ██║   █████╗   ╚███╔╝     ███████║█████╗  ███████║██║  ██║█████╗  ██████╔╝         ██║
-██║         ██║  ██║  ╚██╔╝  ██║╚██╗██║██╔══██║██║╚██╔╝██║██║██║         ╚██╗ ██╔╝██╔══╝  ██╔══██╗   ██║   ██╔══╝   ██╔██╗     ██╔══██║██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗         ██║
-███╗        ██████╔╝   ██║   ██║ ╚████║██║  ██║██║ ╚═╝ ██║██║╚██████╗     ╚████╔╝ ███████╗██║  ██║   ██║   ███████╗██╔╝ ██╗    ██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║        ███║
-╚══╝        ╚═════╝    ╚═╝   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝ ╚═════╝      ╚═══╝  ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═╝    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝        ╚══╝
-
-0x00	1	  bcout          Bone count
-0x01	1	  bind           Bone index[bcout]
-0x04	4	  bweight        Bone weight[bcout]
-0x10	12	  vertpos        Vertex Position
-0x1C	12	  vertnormal     Vertex Normal
-0x28	8	  verttexcord    Vertex TexCoord
+struct mdynvertex_st {
+	int				struct_size							// This struct size
+	byte			numbones;							// Count of bones
+	float			weight[numbones];					// Vertex weights per each bone
+	int				bone[numbones];						// Bones indexes
+	Vector			vert_position;						// Vertex Position
+	Vector			vert_normal;						// Vertex Normal
+	Vector2D		vert_textcord;						// Vertex Texture Coordinates
+}
