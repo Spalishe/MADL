@@ -1,0 +1,17 @@
+MTEX File Format v1 Specification
+Info: Support file for MADL, containing texture data
+
+struct mtex_st {
+	int 			id;									// Model format id, must be "MTEX" (0x6D,0x74,0x65,0x78)
+	int				version;							// Format version, currently is '1' (0x01,0x00,0x00,0x00)
+	int				checksum;							// Must be same in MADL, MPHY and in MANI to properly load!
+	
+	int				tex_count;							// Number of data sections.
+	int				tex_offset;							// Offset to first mtexdata_st.
+}
+
+struct mtexdata_st {
+	int				texture;							// Texture index
+	int				data_length;						// Base64 data Length
+	char			data[data_length];					// Base64 Image data
+}
