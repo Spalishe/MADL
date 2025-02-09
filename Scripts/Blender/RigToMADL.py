@@ -7,37 +7,21 @@ from bpy.types import Operator
 import io
 import random
 
-def writeMADL(context, filepath):
+def writeMADL(self,context, filepath):
     MST = madl_st()
     CHCKSUM = random.randint(-2147483648,2147483647)
     MST.checksum = CHCKSUM
-    
-    def is_attached_to_rig(obj, rig):
-        if obj.parent == rig:
-            return True
-        for mod in obj.modifiers:
-            if mod.type == 'ARMATURE' and mod.object == rig:
-                return True
-        return False
 
     selected_objs = bpy.context.selected_objects
-
     rigs = [obj for obj in selected_objs if obj.type == 'ARMATURE']
-    meshes = [obj for obj in selected_objs if obj.type == 'MESH']
 
     if len(rigs) > 1:
-        print("Ошибка: выбрано больше одного рига.")
-        raise SystemExit("Выбрано больше одного рига.")
+        self.report({'ERROR'},"Selected more than one rig.")
+        return {'CANCELLED'}
 
     if len(rigs) == 1:
         rig = rigs[0]
-        for obj in meshes:
-            if not is_attached_to_rig(obj, rig):
-                print(f"Ошибка: объект {obj.name} не привязан к ригу {rig.name}.")
-                raise SystemExit("Обнаружены объекты, не привязанные к ригу.")
-
-    if len(rigs) == 1:
-        rig = rigs[0]
+        MST.name = list(rig.name)
         bones = list(rig.data.bones)  # Преобразуем к список для удобства получения индекса
         bone_table = []
         for index, bone in enumerate(bones):
@@ -63,7 +47,7 @@ def writeMADL(context, filepath):
             # Формируем запись таблицы: [индекс, имя кости, индекс родителя, позиция, угол]
             st = mbone_st()
             st.index = index
-            st.name = list(name)
+            st.name = list(bone.name)
             st.parent = parent_index
             st.bone_position = bone_position
             st.bone_angle = bone_angle
@@ -72,22 +56,23 @@ def writeMADL(context, filepath):
         print("Таблица костей рига:")
         for row in bone_table:
             print(row)
-
+            
     if len(rigs) == 0:
-        #selected no rigs, only objects
-        pass
+        self.report({'ERROR'},"No rigs selected.")
+        return {'CANCELLED'}
     
     with io.BytesIO(b'') as file:
         file.write(MST.id.to_bytes(4, byteorder="little"))
         file.write(MST.version.to_bytes(4, byteorder="little"))
-        file.write(MST.checksum.to_bytes(4, byteorder="little"))
+        file.write(MST.checksum.to_bytes(4, byteorder="little", signed=True))
+        file.write(''.join(MST.name).encode("utf-8"))
         with open(filepath, "wb") as f:
             f.write(file.getbuffer())
     
     return {'FINISHED'}
 
 class madl_st:
-    id = 1818517869
+    id = 1279541581
     version = 1
     checksum = 0
     name = []
@@ -151,7 +136,7 @@ class ExportMADL(Operator, ExportHelper):
     # List of operator properties, the attributes will be assigned
     # to the class instance from the operator settings before calling.
     def execute(self, context):
-        return writeMADL(context, self.filepath)
+        return writeMADL(self,context, self.filepath)
 
     
 # Only needed if you want to add into a dynamic menu

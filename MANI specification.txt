@@ -12,7 +12,7 @@ struct mtex_st {
 
 struct manidata_st {
 	int				index;								// Animation index.
-	char			name[64];							// Animation name, padding with nulls.
+	char			name[32];							// Animation name, padding with nulls.
 	int				frames;								// Frames count.
 	byte			fps;								// Speed, frames per second.
 	mframes_st		data[frames];						// Frames data.

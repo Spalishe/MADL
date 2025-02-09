@@ -22,7 +22,7 @@ struct madl_st {
 // Exactly 96 bytes
 struct mbone_st {
 	int				index;								// Bone index.
-	char			name[64];							// Bone name, padding with null bytes.
+	char			name[32];							// Bone name, padding with null bytes.
 	int				parent;								// Bone parent index.
 	Vector			bone_position;						// Bone position relative to parent bone.
 	Euler			bone_angle;							// Bone rotation relative to parent bone.
@@ -31,7 +31,7 @@ struct mbone_st {
 struct mstmesh_st {
 	int				struct_size							// This struct size.
 	int				index;								// Static mesh index.
-	char			name[64];							// Static mesh name, padding with null bytes.
+	char			name[32];							// Static mesh name, padding with null bytes.
 	byte			parented;							// Is parented to the bone, 0 if not, anything else is true.
 	int				boneIndex;							// Parented bone index, 0 if mesh not parented.
 	Vector			position;							// Static mesh position relative to origin, (0,0,0) if parented.
