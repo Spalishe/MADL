@@ -3,7 +3,7 @@ Info: Support file for MADL, containing physics data
 
 // Exactly 40 bytes
 struct mphy_st {
-	int 			id;									// Model format id, must be "MPHY" (0x6D,0x70,0x68,0x79)
+	int 			id;									// Model format id, must be "MPHY" (0x4D,0x50,0x48,0x59)
 	int				version;							// Format version, currently is '1' (0x01,0x00,0x00,0x00)
 	int				checksum;							// Must be same in MADL, MTEX and in MANI to properly load!
 	
@@ -18,7 +18,7 @@ struct mphysdata_st {
 	byte			parented;							// Is parented to the bone, 0 if not, anything else is true.
 	int				boneIndex;							// Parented bone index, 0 if mesh not parented.
 	Vector			position;							// Physic mesh position relative to origin, (0,0,0) if parented.
-	Vector			angle;								// Physic mesh rotation relative to origin, (0,0,0) if parented.
+	Euler			angle;								// Physic mesh rotation relative to origin, (0,0,0) if parented.
 	int				vertices_count;						// Physic mesh vertices count.
 	Vector			vertices[vertices_count];			// Vertices positions.
 }

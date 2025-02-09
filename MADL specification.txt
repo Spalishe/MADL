@@ -3,7 +3,7 @@ Info: file format is created for easier handling of animated rigs. This includes
 
 // Exactly 100 bytes
 struct madl_st {
-	int 			id;									// Model format id, must be "MADL" (0x6D,0x61,0x64,0x6c)
+	int 			id;									// Model format id, must be "MADL" (0x4D,0x41,0x44,0x4C)
 	int				version;							// Format version, currently is '1' (0x01,0x00,0x00,0x00)
 	int				checksum;							// Must be same in MPHY, MTEX and in MANI to properly load!
 	char			name[64];							// The internal name of the model, padding with null bytes.
@@ -25,7 +25,7 @@ struct mbone_st {
 	char			name[64];							// Bone name, padding with null bytes.
 	int				parent;								// Bone parent index.
 	Vector			bone_position;						// Bone position relative to parent bone.
-	Vector			bone_angle;							// Bone rotation relative to parent bone.
+	Euler			bone_angle;							// Bone rotation relative to parent bone.
 } 
 
 struct mstmesh_st {
@@ -35,7 +35,7 @@ struct mstmesh_st {
 	byte			parented;							// Is parented to the bone, 0 if not, anything else is true.
 	int				boneIndex;							// Parented bone index, 0 if mesh not parented.
 	Vector			position;							// Static mesh position relative to origin, (0,0,0) if parented.
-	Vector			angle;								// Static mesh rotation relative to origin, (0,0,0) if parented.
+	Euler			angle;								// Static mesh rotation relative to origin, (0,0,0) if parented.
 	int				vertices_count;						// Static mesh vertices count.
 	m_stvert_st		vertices[vertices_count];			// Vertices data.
 	int				texture;							// Texture index.

@@ -2,7 +2,7 @@ MANI File Format v1 Specification
 Info: Support file for MADL, containing animation data
 
 struct mtex_st {
-	int 			id;									// Model format id, must be "MANI" (0x6D,0x61,0x6e,0x69)
+	int 			id;									// Model format id, must be "MANI" (0x4D,0x41,0x4E,0x49)
 	int				version;							// Format version, currently is '1' (0x01,0x00,0x00,0x00)
 	int				checksum;							// Must be same in MADL, MPHY and in MTEX to properly load!
 	
