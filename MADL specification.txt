@@ -1,7 +1,7 @@
 MADL File Format v1 Specification
 Info: file format is created for easier handling of animated rigs. This includes games/programs that can't handle animated meshes, but can generate it on runtime / create from table.
 
-// Exactly 100 bytes
+// Exactly 68 bytes
 struct madl_st {
 	int 			id;									// Model format id, must be "MADL" (0x4D,0x41,0x44,0x4C)
 	int				version;							// Format version, currently is '1' (0x01,0x00,0x00,0x00)
@@ -19,11 +19,11 @@ struct madl_st {
 	int				dvertx_offset;						// See mdynvertex_st.
 }
 
-// Exactly 96 bytes
+// Exactly 64 bytes
 struct mbone_st {
 	int				index;								// Bone index.
 	char			name[32];							// Bone name, padding with null bytes.
-	int				parent;								// Bone parent index.
+	int				parent;								// Bone parent index, -1 for no parent, means its a base bone
 	Vector			bone_position;						// Bone position relative to parent bone.
 	Euler			bone_angle;							// Bone rotation relative to parent bone.
 } 

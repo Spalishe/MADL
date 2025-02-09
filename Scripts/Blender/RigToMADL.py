@@ -6,6 +6,7 @@ from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator
 import io
 import random
+import struct
 
 def writeMADL(self,context, filepath):
     MST = madl_st()
@@ -21,16 +22,14 @@ def writeMADL(self,context, filepath):
 
     if len(rigs) == 1:
         rig = rigs[0]
-        MST.name = list(rig.name)
-        bones = list(rig.data.bones)  # Преобразуем к список для удобства получения индекса
+        MST.name = list(rig.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
+        bones = list(rig.data.bones)
         bone_table = []
         for index, bone in enumerate(bones):
-            # Если у кости есть родитель, получаем его индекс из списка bones
             if bone.parent:
                 parent_index = bones.index(bone.parent)
                 bone_position = bone.head_local - bone.parent.head_local
 
-                # Вычисляем разницу Эйлеровых углов по компонентам
                 euler_current = bone.matrix_local.to_euler()
                 euler_parent = bone.parent.matrix_local.to_euler()
                 bone_angle = (
@@ -39,23 +38,19 @@ def writeMADL(self,context, filepath):
                     euler_current[2] - euler_parent[2]
                 )
             else:
-                parent_index = -1  # Если родителя нет, присваиваем -1
+                parent_index = -1
                 bone_position = bone.head_local
                 euler_current = bone.matrix_local.to_euler()
                 bone_angle = (euler_current[0], euler_current[1], euler_current[2])
 
-            # Формируем запись таблицы: [индекс, имя кости, индекс родителя, позиция, угол]
             st = mbone_st()
             st.index = index
-            st.name = list(bone.name)
+            st.name = list(bone.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
+            print(parent_index)
             st.parent = parent_index
             st.bone_position = bone_position
             st.bone_angle = bone_angle
             bone_table.append(st)
-
-        print("Таблица костей рига:")
-        for row in bone_table:
-            print(row)
             
     if len(rigs) == 0:
         self.report({'ERROR'},"No rigs selected.")
@@ -66,6 +61,35 @@ def writeMADL(self,context, filepath):
         file.write(MST.version.to_bytes(4, byteorder="little"))
         file.write(MST.checksum.to_bytes(4, byteorder="little", signed=True))
         file.write(''.join(MST.name).encode("utf-8"))
+        
+        BonesSection = io.BytesIO(b'')
+        for bone in bone_table:
+            BonesSection.write(bone.index.to_bytes(4,byteorder="little"))
+            BonesSection.write(''.join(bone.name).encode("utf-8"))
+            BonesSection.write(bone.parent.to_bytes(4,byteorder="little",signed=True))
+            BonesSection.write(struct.pack("<f", bone.bone_position[0]))
+            BonesSection.write(struct.pack("<f", bone.bone_position[1]))
+            BonesSection.write(struct.pack("<f", bone.bone_position[2]))
+            BonesSection.write(struct.pack("<f", bone.bone_angle[0]))
+            BonesSection.write(struct.pack("<f", bone.bone_angle[1]))
+            BonesSection.write(struct.pack("<f", bone.bone_angle[2]))
+            
+        bones_offset = 68 # Main header end
+        bones_count = len(bone_table)
+        static_mesh_offset = bones_offset+len(BonesSection.getvalue()) # Bones section end
+        static_mesh_count = len(bone_table)
+        dvertx_offset = static_mesh_offset+len(BonesSection.getvalue()) # Static meshes section end
+        dvertx_count = len(bone_table)
+        
+        file.write(bones_count.to_bytes(4,byteorder="little"))
+        file.write(bones_offset.to_bytes(4,byteorder="little"))
+        file.write(static_mesh_count.to_bytes(4,byteorder="little"))
+        file.write(static_mesh_offset.to_bytes(4,byteorder="little"))
+        file.write(dvertx_count.to_bytes(4,byteorder="little"))
+        file.write(dvertx_offset.to_bytes(4,byteorder="little"))
+        
+        file.write(BonesSection.getvalue())
+        
         with open(filepath, "wb") as f:
             f.write(file.getbuffer())
     
