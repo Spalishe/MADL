@@ -6,7 +6,7 @@ struct madl_st {
 	int 			id;									// Model format id, must be "MADL" (0x4D,0x41,0x44,0x4C)
 	int				version;							// Format version, currently is '1' (0x01,0x00,0x00,0x00)
 	int				checksum;							// Must be same in MPHY, MTEX and in MANI to properly load!
-	char			name[64];							// The internal name of the model, padding with null bytes.
+	char			name[32];							// The internal name of the model, padding with null bytes.
 														// Typically "my_model.madl" will have an internal name of "my_model"
 														
 	int				bone_count;							// Number of data sections.
