@@ -8,6 +8,14 @@ import io
 import random
 import struct
 
+def is_attached_to_rig(obj, rig):
+    if obj.parent == rig:
+        return True
+    for mod in obj.modifiers:
+        if mod.type == 'ARMATURE' and mod.object == rig:
+            return True
+    return False
+
 def writeMADL(self,context, filepath):
     MST = madl_st()
     CHCKSUM = random.randint(-2147483648,2147483647)
@@ -22,7 +30,11 @@ def writeMADL(self,context, filepath):
 
     if len(rigs) == 1:
         rig = rigs[0]
+        mesh_objs = [obj for obj in selected_objs if obj.type == 'MESH' and is_attached_to_rig(obj, rig)]
+        
         MST.name = list(rig.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
+        
+        # BONES
         bones = list(rig.data.bones)
         bone_table = []
         for index, bone in enumerate(bones):
@@ -51,6 +63,26 @@ def writeMADL(self,context, filepath):
             st.bone_position = bone_position
             st.bone_angle = bone_angle
             bone_table.append(st)
+            
+        # STATIC MESHES
+        meshes_table = {}
+        for obj in mesh_objs:
+            for triag in obj.data.polygons:
+                for idx in triag.vertices:
+                    vert = obj.data.vertices[idx]
+                    groups = vert.groups
+                    if len(groups) != 1:
+                        break
+                    if groups[0].weight != 1.0:
+                        break
+                    bone_ind = obj.vertex_groups[groups[0].group].index
+                    if not bone_ind in meshes_table.keys():
+                        meshes_table[bone_ind] = []
+                    meshes_table[bone_ind].append(vert)
+        
+        for bone_indx,vert_array in meshes_table.items():
+            bone = rig.data.bones[bone_indx]
+            
             
     if len(rigs) == 0:
         self.report({'ERROR'},"No rigs selected.")
