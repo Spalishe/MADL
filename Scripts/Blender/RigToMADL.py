@@ -140,13 +140,22 @@ def writeMADL(self,context, filepath):
             objects_uvs[obj] = get_vertex_uvs(obj)
         
         # TEXTURES
-        texture_table = []
+        texture_table = {}
+        text_ind_temp = 0
         for obj in mesh_objs:
             if len(obj.material_slots) == 0:
                 continue
             slot = obj.material_slots[0]
             mat = slot.material
-            get_base_color_texture_from_material(mat)
+            if mat in texture_table.keys():
+                continue
+            base = get_base_color_texture_from_material(mat)
+            dat = mtexdata_st()
+            dat.texture = text_ind_temp
+            text_ind_temp = text_ind_temp + 1
+            dat.data_length = len(base)
+            dat.data = list(base)
+            texture_table[mat] = dat
         
         # BONES
         bones = list(rig.data.bones)
@@ -178,8 +187,10 @@ def writeMADL(self,context, filepath):
             bone_table.append(st)
             
         # STATIC MESHES
+        fin_meshes_table = []
         meshes_table = {}
-        for obj in mesh_objs:
+        for i in range(len(mesh_objs)):
+            obj = mesh_objs[i]
             for triag in obj.data.polygons:
                 for idx in triag.vertices:
                     vert = obj.data.vertices[idx]
@@ -189,25 +200,27 @@ def writeMADL(self,context, filepath):
                     if groups[0].weight != 1.0:
                         break
                     bone_ind = obj.vertex_groups[groups[0].group].index
-                    if not bone_ind in meshes_table.keys():
-                        meshes_table[bone_ind] = []
-                    meshes_table[bone_ind].append(vert)
+                    if not i in meshes_table.keys():
+                        meshes_table[i] = [bone_ind,[]]
+                    meshes_table[i][1].append(vert)
         
-        i = 0
-        for bone_indx,vert_array in meshes_table.items():
+        i1 = 0
+        for i,data in meshes_table.items():
+            vert_array = data[1]
+            bone_indx = data[0]
             bone = rig.data.bones[bone_indx]
             st1 = mstmesh_st()
-            i = i + 1
-            st1.index = i
+            i1 = i1 + 1
+            st1.index = i1
             st1.name = list(vert_array[0].id_data.name+"_sm"+str(bone_indx))
             st1.parented = 1
             st1.boneIndex = bone_indx
             st1.position = mathutils.Vector((0.0,0.0,0.0))
             st1.angle = mathutils.Euler((0.0, 0.0, 0.0),'XYZ')
             st1.vertices_count = len(vert_array)
+            obj = mesh_to_obj[vert_array[0].id_data]
             new_vert_array = []
             for vert in vert_array:
-                obj = mesh_to_obj[vert.id_data]
                 pos,normal = get_vertex_position_and_normal(mesh_to_obj[vert.id_data],bone,vert.index)
                 
                 uvs_table = objects_uvs[obj]
@@ -218,7 +231,12 @@ def writeMADL(self,context, filepath):
                 vertC.vert_texcord = uvs_table[vert.index]
                 new_vert_array.append(vertC)
             st1.vertices = new_vert_array
-            st1.texture = 0
+            try:
+                st1.texture = texture_table[obj.material_slots[0].material].texture
+            except IndexError:
+                st1.texture = -1
+            
+            fin_meshes_table.append(st1)
             
     if len(rigs) == 0:
         self.report({'ERROR'},"No rigs selected.")
@@ -241,7 +259,10 @@ def writeMADL(self,context, filepath):
             BonesSection.write(struct.pack("<f", bone.bone_angle[0]))
             BonesSection.write(struct.pack("<f", bone.bone_angle[1]))
             BonesSection.write(struct.pack("<f", bone.bone_angle[2]))
-            
+        
+        StaticMeshSection = io.BytesIO(b'')
+        print(fin_meshes_table)
+        
         bones_offset = 68 # Main header end
         bones_count = len(bone_table)
         static_mesh_offset = bones_offset+len(BonesSection.getvalue()) # Bones section end
@@ -263,6 +284,7 @@ def writeMADL(self,context, filepath):
     
     return {'FINISHED'}
 
+#MADL
 class madl_st:
     id = 1279541581
     version = 1
@@ -310,7 +332,21 @@ class mdynvertex_st:
     vert_position = mathutils.Vector((0.0,0.0,0.0))
     vert_normal = mathutils.Vector((0.0,0.0,0.0))
     vert_texcoord = mathutils.Vector((0.0,0.0,0.0)) # third axis ignored
+
+#MTEX
+class mtex_st:
+    id = 1480938573
+    version = 1
+    checksum = 0
     
+    tex_count = 0
+    tex_offset = 0
+
+class mtexdata_st:
+    texture = 0
+    data_length = 0
+    data = []
+
 class ExportMADL(Operator, ExportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
     bl_idname = "madl.export"  # important since its how bpy.ops.import_test.some_data is constructed
