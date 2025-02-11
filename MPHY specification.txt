@@ -12,7 +12,7 @@ struct mphy_st {
 }
 
 struct mphysdata_st {
-	int				struct_size							// This struct size.
+	int				struct_size							// This struct size, without this variable
 	int				index;								// Physic mesh index.
 	char			name[32];							// Physic mesh name, padding with null bytes.
 	byte			parented;							// Is parented to the bone, 0 if not, anything else is true.

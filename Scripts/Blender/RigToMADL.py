@@ -1,4 +1,7 @@
 # Made by Spalishe for github.com/Spalishe/MADL
+# Before use it, Separate each rig mesh by materials, because MADL format dont support multiple materials
+# on objects.
+
 import bpy
 import mathutils
 from bpy_extras.io_utils import ExportHelper
@@ -58,7 +61,6 @@ def writeMADL(self,context, filepath):
             st = mbone_st()
             st.index = index
             st.name = list(bone.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
-            print(parent_index)
             st.parent = parent_index
             st.bone_position = bone_position
             st.bone_angle = bone_angle
@@ -80,9 +82,27 @@ def writeMADL(self,context, filepath):
                         meshes_table[bone_ind] = []
                     meshes_table[bone_ind].append(vert)
         
+        i = 0
         for bone_indx,vert_array in meshes_table.items():
             bone = rig.data.bones[bone_indx]
-            
+            st1 = mstmesh_st()
+            i = i + 1
+            st1.index = i
+            st1.name = list(vert_array[0].id_data.name+"_sm"+bone_indx)
+            st1.parented = 1
+            st1.boneIndex = bone_indx
+            st1.position = mathutils.Vector((0.0,0.0,0.0))
+            st1.angle = mathutils.Euler((0.0, 0.0, 0.0),'XYZ')
+            st1.vertices_count = len(vert_array)
+            new_vert_array = []
+            for vert in vert_array:
+                obj = vert.id_data
+                v_world = obj.matrix_world @ vert.co
+                bone_world = rig.matrix_world @ bone.matrix
+                v_in_bone = bone_world.inverted() @ v_world
+                rel_matrix = bone_world.inverted() @ obj.matrix_world
+                angle = rel_matrix.to_euler()
+            st1.vertices = new_vert_array
             
     if len(rigs) == 0:
         self.report({'ERROR'},"No rigs selected.")
