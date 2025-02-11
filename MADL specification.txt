@@ -41,7 +41,7 @@ struct mstmesh_st {
 	byte			texture								// Texture index.
 }
 
-// Exactly 33 bytes
+// Exactly 32 bytes
 struct m_stvert_st {
 	Vector			vert_position;						// Vertex Position.
 	Vector			vert_normal;						// Vertex Normal.
