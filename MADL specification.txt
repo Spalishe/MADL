@@ -38,7 +38,7 @@ struct mstmesh_st {
 	Euler			angle;								// Static mesh rotation relative to origin, (0,0,0) if parented.
 	int				vertices_count;						// Static mesh vertices count.
 	m_stvert_st		vertices[vertices_count];			// Vertices data.
-	byte			texture								// Texture index.
+	byte			texture								// Texture index, -1 if no those
 }
 
 // Exactly 32 bytes
@@ -64,5 +64,5 @@ struct mdynmesh_st {
 	char			name[32];							// Dynamic mesh name, padding with null bytes.
 	int				vertices_count;						// Dynamic mesh vertices count.
 	mdynvert_st		vertices[vertices_count];			// Vertices data.
-	byte			texture								// Texture index.
+	byte			texture								// Texture index, -1 if no those
 }
