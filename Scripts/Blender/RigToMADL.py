@@ -115,8 +115,10 @@ def get_vertex_uvs(obj):
 
 def writeMADL(self,context, filepath):
     MST = madl_st()
+    MTEX = mtex_st()
     CHCKSUM = random.randint(-2147483648,2147483647)
     MST.checksum = CHCKSUM
+    MTEX.checksum = CHCKSUM
 
     selected_objs = bpy.context.selected_objects
     rigs = [obj for obj in selected_objs if obj.type == 'ARMATURE']
@@ -212,7 +214,7 @@ def writeMADL(self,context, filepath):
             st1 = mstmesh_st()
             i1 = i1 + 1
             st1.index = i1
-            st1.name = list(vert_array[0].id_data.name+"_sm"+str(bone_indx))
+            st1.name = list((vert_array[0].id_data.name+"_sm"+str(bone_indx)).encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
             st1.parented = 1
             st1.boneIndex = bone_indx
             st1.position = mathutils.Vector((0.0,0.0,0.0))
@@ -242,11 +244,12 @@ def writeMADL(self,context, filepath):
         self.report({'ERROR'},"No rigs selected.")
         return {'CANCELLED'}
     
-    with io.BytesIO(b'') as file:
-        file.write(MST.id.to_bytes(4, byteorder="little"))
-        file.write(MST.version.to_bytes(4, byteorder="little"))
-        file.write(MST.checksum.to_bytes(4, byteorder="little", signed=True))
-        file.write(''.join(MST.name).encode("utf-8"))
+    new_filepath = filepath[:-4]
+    with io.BytesIO(b'') as madl:
+        madl.write(MST.id.to_bytes(4, byteorder="little"))
+        madl.write(MST.version.to_bytes(4, byteorder="little"))
+        madl.write(MST.checksum.to_bytes(4, byteorder="little", signed=True))
+        madl.write(''.join(MST.name).encode("utf-8"))
         
         BonesSection = io.BytesIO(b'')
         for bone in bone_table:
@@ -261,26 +264,74 @@ def writeMADL(self,context, filepath):
             BonesSection.write(struct.pack("<f", bone.bone_angle[2]))
         
         StaticMeshSection = io.BytesIO(b'')
-        print(fin_meshes_table)
+        for stm in fin_meshes_table:
+            stm.struct_size = 70 + len(stm.vertices)*32
+            StaticMeshSection.write(stm.struct_size.to_bytes(4,byteorder="little"))
+            StaticMeshSection.write(stm.index.to_bytes(4,byteorder="little"))
+            StaticMeshSection.write(''.join(stm.name).encode("utf-8"))
+            StaticMeshSection.write(stm.parented.to_bytes(1,byteorder="little"))
+            StaticMeshSection.write(stm.boneIndex.to_bytes(4,byteorder="little"))
+            StaticMeshSection.write(struct.pack("<f", stm.position[0]))
+            StaticMeshSection.write(struct.pack("<f", stm.position[1]))
+            StaticMeshSection.write(struct.pack("<f", stm.position[2]))
+            StaticMeshSection.write(struct.pack("<f", stm.angle[0]))
+            StaticMeshSection.write(struct.pack("<f", stm.angle[1]))
+            StaticMeshSection.write(struct.pack("<f", stm.angle[2]))
+            StaticMeshSection.write(stm.vertices_count.to_bytes(4,byteorder="little"))
+            for vert in stm.vertices:
+                StaticMeshSection.write(struct.pack("<f", vert.vert_position[0]))
+                StaticMeshSection.write(struct.pack("<f", vert.vert_position[1]))
+                StaticMeshSection.write(struct.pack("<f", vert.vert_position[2]))
+                StaticMeshSection.write(struct.pack("<f", vert.vert_normal[0]))
+                StaticMeshSection.write(struct.pack("<f", vert.vert_normal[1]))
+                StaticMeshSection.write(struct.pack("<f", vert.vert_normal[2]))
+                StaticMeshSection.write(struct.pack("<f", vert.vert_texcoord[0]))
+                StaticMeshSection.write(struct.pack("<f", vert.vert_texcoord[1]))
+            StaticMeshSection.write(stm.texture.to_bytes(1,byteorder="little",signed=True))
         
         bones_offset = 68 # Main header end
         bones_count = len(bone_table)
         static_mesh_offset = bones_offset+len(BonesSection.getvalue()) # Bones section end
-        static_mesh_count = len(bone_table)
-        dvertx_offset = static_mesh_offset+len(BonesSection.getvalue()) # Static meshes section end
+        static_mesh_count = len(fin_meshes_table)
+        dvertx_offset = static_mesh_offset+len(StaticMeshSection.getvalue()) # Static meshes section end
         dvertx_count = len(bone_table)
         
-        file.write(bones_count.to_bytes(4,byteorder="little"))
-        file.write(bones_offset.to_bytes(4,byteorder="little"))
-        file.write(static_mesh_count.to_bytes(4,byteorder="little"))
-        file.write(static_mesh_offset.to_bytes(4,byteorder="little"))
-        file.write(dvertx_count.to_bytes(4,byteorder="little"))
-        file.write(dvertx_offset.to_bytes(4,byteorder="little"))
+        madl.write(bones_count.to_bytes(4,byteorder="little"))
+        madl.write(bones_offset.to_bytes(4,byteorder="little"))
+        madl.write(static_mesh_count.to_bytes(4,byteorder="little"))
+        madl.write(static_mesh_offset.to_bytes(4,byteorder="little"))
+        madl.write(dvertx_count.to_bytes(4,byteorder="little"))
+        madl.write(dvertx_offset.to_bytes(4,byteorder="little"))
         
-        file.write(BonesSection.getvalue())
+        madl.write(BonesSection.getvalue())
+        madl.write(StaticMeshSection.getvalue())
         
-        with open(filepath, "wb") as f:
-            f.write(file.getbuffer())
+        with open(new_filepath+"madl", "wb") as f:
+            f.write(madl.getbuffer())
+            
+    with io.BytesIO(b'') as mtex:        
+        mtex.write(MTEX.id.to_bytes(4, byteorder="little"))
+        mtex.write(MTEX.version.to_bytes(4, byteorder="little"))
+        mtex.write(MTEX.checksum.to_bytes(4, byteorder="little", signed=True))
+        
+        TextureDataSection = io.BytesIO(b'')
+        for mat,texture in texture_table.items():
+            texture.struct_size = 8 + texture.data_length
+            TextureDataSection.write(texture.struct_size.to_bytes(4,byteorder="little"))
+            TextureDataSection.write(texture.texture.to_bytes(4,byteorder="little"))
+            TextureDataSection.write(texture.data_length.to_bytes(4,byteorder="little"))
+            TextureDataSection.write(''.join(texture.data).encode("utf-8"))
+        
+        tex_offset = 12 # Main header end
+        tex_count = len(texture_table)
+        
+        mtex.write(tex_count.to_bytes(4,byteorder="little"))
+        mtex.write(tex_offset.to_bytes(4,byteorder="little"))
+        
+        mtex.write(TextureDataSection.getvalue())
+        
+        with open(new_filepath+"mtex", "wb") as f:
+            f.write(mtex.getbuffer())
     
     return {'FINISHED'}
 
@@ -343,6 +394,7 @@ class mtex_st:
     tex_offset = 0
 
 class mtexdata_st:
+    struct_size = 0
     texture = 0
     data_length = 0
     data = []

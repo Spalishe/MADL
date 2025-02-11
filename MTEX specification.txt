@@ -11,6 +11,7 @@ struct mtex_st {
 }
 
 struct mtexdata_st {
+	int				struct_size							// This struct size, without this variable
 	int				texture;							// Texture index.
 	int				data_length;						// Base64 data Length.
 	char			data[data_length];					// Base64 Image data.
