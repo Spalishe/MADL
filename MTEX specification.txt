@@ -15,4 +15,7 @@ struct mtexdata_st {
 	int				texture;							// Texture index.
 	int				data_length;						// Base64 data Length.
 	char			data[data_length];					// Base64 Image data.
+	byte			emission;							// Emission, 0 = disabled, >= 1 = enabled
+	int				emission_data_length;				// Emission Base64 data length, 0 if disabled
+	char			emission_data[emission_data_length];// Emission Base64 data, must not exist if emission disabled
 }

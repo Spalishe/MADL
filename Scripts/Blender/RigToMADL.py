@@ -91,6 +91,51 @@ def get_base_color_texture_from_material(material):
 
     return None
 
+
+def get_emission_texture_from_material(material):
+    if not material.node_tree:
+        raise ValueError(f"Material {material.name} has no nodes.")
+
+    material_output_node = None
+    for node in material.node_tree.nodes:
+        if node.type == 'OUTPUT_MATERIAL':
+            material_output_node = node
+            break
+
+    if not material_output_node:
+        raise ValueError(f"No Material Output node in {material.name}.")
+        
+    bsdf_node = None
+    for node in material.node_tree.nodes:
+        for input_socket in node.inputs:
+            if input_socket.is_linked:
+                if node.type == 'BSDF_PRINCIPLED':
+                    bsdf_node = node
+                    break
+        if bsdf_node:
+            break
+
+    if not bsdf_node:
+        raise ValueError(f"No BSDF node found in {material.name}.")
+
+    base_color_input = bsdf_node.inputs.get("Emission")
+    if base_color_input and base_color_input.is_linked:
+        image_texture_node = base_color_input.links[0].from_node
+        if image_texture_node.type == 'TEX_IMAGE':
+            image = image_texture_node.image
+
+            temp_file = tempfile.gettempdir() + "/emission_texture.png"
+            image.filepath_raw = temp_file
+            image.file_format = 'PNG'
+            image.save()
+
+            with open(temp_file, "rb") as f:
+                base64_str = base64.b64encode(f.read()).decode('utf-8')
+
+            return base64_str
+
+    return None
+
 def get_objects_parented_to_rig(rig):
     parented_objects = []
 
@@ -129,6 +174,8 @@ def writeMADL(self,context, filepath):
 
     if len(rigs) == 1:
         rig = rigs[0]
+        rig.data.pose_position = 'REST'
+
         mesh_objs = get_objects_parented_to_rig(rig)
         
         MST.name = list(rig.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
@@ -157,6 +204,13 @@ def writeMADL(self,context, filepath):
             text_ind_temp = text_ind_temp + 1
             dat.data_length = len(base)
             dat.data = list(base)
+            
+            emission = get_emission_texture_from_material(mat)
+            if emission != None:
+                dat.emission = 1
+                dat.emission_data_length = len(emission)
+                dat.emission_data = list(base)
+            
             texture_table[mat] = dat
         
         # BONES
@@ -190,21 +244,29 @@ def writeMADL(self,context, filepath):
             
         # STATIC MESHES
         fin_meshes_table = []
+        used_triags = {}
         meshes_table = {}
         for i in range(len(mesh_objs)):
             obj = mesh_objs[i]
             for triag in obj.data.polygons:
+                ValidTriag = True
                 for idx in triag.vertices:
                     vert = obj.data.vertices[idx]
                     groups = vert.groups
                     if len(groups) != 1:
+                        ValidTriag = False
                         break
                     if groups[0].weight != 1.0:
+                        ValidTriag = False
                         break
                     bone_ind = obj.vertex_groups[groups[0].group].index
                     if not i in meshes_table.keys():
                         meshes_table[i] = [bone_ind,[]]
                     meshes_table[i][1].append(vert)
+                if ValidTriag:
+                    if not obj in used_triags.keys():
+                        used_triags[obj] = []
+                    used_triags[obj].append(triag)
         
         i1 = 0
         for i,data in meshes_table.items():
@@ -240,6 +302,41 @@ def writeMADL(self,context, filepath):
             
             fin_meshes_table.append(st1)
             
+        # DYNAMIC VERTICES
+        dyn_indx = 0
+        for obj,triag_array in used_triags.items():
+            dyn_st = mdynmesh_st()
+            dyn_st.index = dyn_indx
+            dyn_st.name = list((obj.name+"_dm"+str(dyn_indx)).encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
+            dyn_indx = dyn_indx + 1
+            try:
+                dyn_st.texture = texture_table[obj.material_slots[0].material].texture
+            except IndexError:
+                dyn_st.texture = -1
+            
+            uvs_table = objects_uvs[obj]
+            new_vert_table = []
+            for triag in triag_array:
+                for vert_ind in triag.vertices:
+                    vert = obj.data.vertices[vert_ind]
+                    dynvert = mdynvert_st()
+                    numbones = 0
+                    weights = []
+                    bone = []
+                    for g in vert.groups:
+                        weights.append(g.weight)
+                        group_name = obj.vertex_groups[g.group].name
+                        bone.append(rig.data.bones.find(group_name))
+                        numbones = numbones + 1
+                    dynvert.numbones = numbones
+                    dynvert.weight = weights
+                    dynvert.bone = bone
+                    dynvert.struct_size = 33 + 8 * numbones
+                    dynvert.vert_position = vert.co
+                    dynvert.vert_normal = vert.normal
+                    dynvert.vert_texcoord = uvs_table[vert.index]
+                    new_vert_table.append(dynvert)
+        
     if len(rigs) == 0:
         self.report({'ERROR'},"No rigs selected.")
         return {'CANCELLED'}
@@ -316,11 +413,14 @@ def writeMADL(self,context, filepath):
         
         TextureDataSection = io.BytesIO(b'')
         for mat,texture in texture_table.items():
-            texture.struct_size = 8 + texture.data_length
+            texture.struct_size = 13 + texture.data_length + texture.emission_data_length
             TextureDataSection.write(texture.struct_size.to_bytes(4,byteorder="little"))
             TextureDataSection.write(texture.texture.to_bytes(4,byteorder="little"))
             TextureDataSection.write(texture.data_length.to_bytes(4,byteorder="little"))
             TextureDataSection.write(''.join(texture.data).encode("utf-8"))
+            TextureDataSection.write(texture.emission.to_bytes(1,byteorder="little"))
+            TextureDataSection.write(texture.emission_data_length.to_bytes(4,byteorder="little"))
+            TextureDataSection.write(''.join(texture.emission_data).encode("utf-8"))
         
         tex_offset = 12 # Main header end
         tex_count = len(texture_table)
@@ -333,6 +433,7 @@ def writeMADL(self,context, filepath):
         with open(new_filepath+"mtex", "wb") as f:
             f.write(mtex.getbuffer())
     
+    rig.data.pose_position = 'POSE'
     return {'FINISHED'}
 
 #MADL
@@ -375,7 +476,7 @@ class m_stvert_st:
     vert_normal = mathutils.Vector((0.0,0.0,0.0))
     vert_texcoord = mathutils.Vector((0.0,0.0,0.0)) # third axis ignored
     
-class mdynvertex_st:
+class mdynvert_st:
     struct_size = 0
     numbones = 0
     weight = []
@@ -383,6 +484,14 @@ class mdynvertex_st:
     vert_position = mathutils.Vector((0.0,0.0,0.0))
     vert_normal = mathutils.Vector((0.0,0.0,0.0))
     vert_texcoord = mathutils.Vector((0.0,0.0,0.0)) # third axis ignored
+
+class mdynmesh_st:
+    struct_size = 0
+    index = 0
+    name = []
+    vertices_count = 0
+    vertices = []
+    texture = 0
 
 #MTEX
 class mtex_st:
@@ -398,6 +507,9 @@ class mtexdata_st:
     texture = 0
     data_length = 0
     data = []
+    emission = 0
+    emission_data_length = 0
+    emission_data = []
 
 class ExportMADL(Operator, ExportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
