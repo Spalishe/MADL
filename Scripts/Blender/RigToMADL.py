@@ -82,11 +82,11 @@ def get_base_color_texture_from_material(material):
             temp_file = tempfile.gettempdir() + "/base_color_texture.png"
             image.filepath_raw = temp_file
             image.file_format = 'PNG'
+            image.scale(1024,1024) # compression 
             image.save()
 
             with open(temp_file, "rb") as f:
-                base64_str = base64.b64encode(f.read()).decode('utf-8')
-
+                base64_str = f.read().decode("latin-1")
             return base64_str
 
     return None
@@ -127,10 +127,11 @@ def get_emission_texture_from_material(material):
             temp_file = tempfile.gettempdir() + "/emission_texture.png"
             image.filepath_raw = temp_file
             image.file_format = 'PNG'
+            image.scale(1024,1024) # compression 
             image.save()
 
             with open(temp_file, "rb") as f:
-                base64_str = base64.b64encode(f.read()).decode('utf-8')
+                base64_str = f.read().decode("latin-1")
 
             return base64_str
 
@@ -158,12 +159,14 @@ def get_vertex_uvs(obj):
     
     return tbl
 
-def writeMADL(self,context, filepath):
+def writeMADL(self,context, filepath, add_phy):
     MST = madl_st()
     MTEX = mtex_st()
+    MPHY = mphy_st()
     CHCKSUM = random.randint(-2147483648,2147483647)
     MST.checksum = CHCKSUM
     MTEX.checksum = CHCKSUM
+    MPHY.checksum = CHCKSUM
 
     selected_objs = bpy.context.selected_objects
     rigs = [obj for obj in selected_objs if obj.type == 'ARMATURE']
@@ -177,6 +180,11 @@ def writeMADL(self,context, filepath):
         rig.data.pose_position = 'REST'
 
         mesh_objs = get_objects_parented_to_rig(rig)
+        
+        # TODO: make physics
+        if add_phy:
+            phy_obj = [obj for obj in mesh_objs if "phy" in obj.name][0]
+            mesh_objs.remove(phy_obj)
         
         MST.name = list(rig.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
         
@@ -194,24 +202,24 @@ def writeMADL(self,context, filepath):
         for obj in mesh_objs:
             if len(obj.material_slots) == 0:
                 continue
-            slot = obj.material_slots[0]
-            mat = slot.material
-            if mat in texture_table.keys():
-                continue
-            base = get_base_color_texture_from_material(mat)
-            dat = mtexdata_st()
-            dat.texture = text_ind_temp
-            text_ind_temp = text_ind_temp + 1
-            dat.data_length = len(base)
-            dat.data = list(base)
-            
-            emission = get_emission_texture_from_material(mat)
-            if emission != None:
-                dat.emission = 1
-                dat.emission_data_length = len(emission)
-                dat.emission_data = list(base)
-            
-            texture_table[mat] = dat
+            for slot in obj.material_slots:
+                mat = slot.material
+                if mat in texture_table.keys():
+                    continue
+                base = get_base_color_texture_from_material(mat)
+                dat = mtexdata_st()
+                dat.texture = text_ind_temp
+                text_ind_temp = text_ind_temp + 1
+                dat.data_length = len(base)
+                dat.data = list(base)
+                dat.name = list(mat.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
+                emission = get_emission_texture_from_material(mat)
+                if emission != None:
+                    dat.emission = 1
+                    dat.emission_data_length = len(emission)
+                    dat.emission_data = list(base)
+                
+                texture_table[mat] = dat
         
         # BONES
         bones = list(rig.data.bones)
@@ -243,6 +251,9 @@ def writeMADL(self,context, filepath):
             bone_table.append(st)
             
         # STATIC MESHES
+        
+        # TODO: remake this cuz i stupid
+        
         fin_meshes_table = []
         used_triags = {}
         meshes_table = {}
@@ -303,6 +314,7 @@ def writeMADL(self,context, filepath):
             fin_meshes_table.append(st1)
             
         # DYNAMIC VERTICES
+        dyn_vertx_table = []
         dyn_indx = 0
         for obj,triag_array in used_triags.items():
             dyn_st = mdynmesh_st()
@@ -336,6 +348,9 @@ def writeMADL(self,context, filepath):
                     dynvert.vert_normal = vert.normal
                     dynvert.vert_texcoord = uvs_table[vert.index]
                     new_vert_table.append(dynvert)
+            dyn_st.vertices_count = len(new_vert_table)
+            dyn_st.vertices = new_vert_table
+            dyn_vertx_table.append(dyn_st)
         
     if len(rigs) == 0:
         self.report({'ERROR'},"No rigs selected.")
@@ -385,13 +400,37 @@ def writeMADL(self,context, filepath):
                 StaticMeshSection.write(struct.pack("<f", vert.vert_texcoord[0]))
                 StaticMeshSection.write(struct.pack("<f", vert.vert_texcoord[1]))
             StaticMeshSection.write(stm.texture.to_bytes(1,byteorder="little",signed=True))
+            
+        DynamicVertxSection = io.BytesIO(b'')
+        for dvm in dyn_vertx_table:
+            DynamicVertxSection.write(dvm.struct_size.to_bytes(4,byteorder="little"))
+            DynamicVertxSection.write(dvm.index.to_bytes(4,byteorder="little"))
+            DynamicVertxSection.write(''.join(dvm.name).encode("utf-8"))
+            DynamicVertxSection.write(dvm.vertices_count.to_bytes(4,byteorder="little"))
+            for vert in dvm.vertices:
+                DynamicVertxSection.write(vert.struct_size.to_bytes(4,byteorder="little"))
+                DynamicVertxSection.write(vert.numbones.to_bytes(1,byteorder="little"))
+                for weight in vert.weight:
+                    DynamicVertxSection.write(struct.pack("<f", weight))
+                for bone in vert.bone:
+                    DynamicVertxSection.write(bone.to_bytes(1,byteorder="little"))
+                DynamicVertxSection.write(struct.pack("<f", vert.vert_position[0]))
+                DynamicVertxSection.write(struct.pack("<f", vert.vert_position[1]))
+                DynamicVertxSection.write(struct.pack("<f", vert.vert_position[2]))
+                DynamicVertxSection.write(struct.pack("<f", vert.vert_normal[0]))
+                DynamicVertxSection.write(struct.pack("<f", vert.vert_normal[1]))
+                DynamicVertxSection.write(struct.pack("<f", vert.vert_normal[2]))
+                DynamicVertxSection.write(struct.pack("<f", vert.vert_texcoord[0]))
+                DynamicVertxSection.write(struct.pack("<f", vert.vert_texcoord[1]))
+            DynamicVertxSection.write(dvm.texture.to_bytes(1,byteorder="little",signed=True))
+            
         
         bones_offset = 68 # Main header end
         bones_count = len(bone_table)
         static_mesh_offset = bones_offset+len(BonesSection.getvalue()) # Bones section end
         static_mesh_count = len(fin_meshes_table)
         dvertx_offset = static_mesh_offset+len(StaticMeshSection.getvalue()) # Static meshes section end
-        dvertx_count = len(bone_table)
+        dvertx_count = len(dyn_vertx_table)
         
         madl.write(bones_count.to_bytes(4,byteorder="little"))
         madl.write(bones_offset.to_bytes(4,byteorder="little"))
@@ -402,6 +441,7 @@ def writeMADL(self,context, filepath):
         
         madl.write(BonesSection.getvalue())
         madl.write(StaticMeshSection.getvalue())
+        madl.write(DynamicVertxSection.getvalue())
         
         with open(new_filepath+"madl", "wb") as f:
             f.write(madl.getbuffer())
@@ -413,9 +453,10 @@ def writeMADL(self,context, filepath):
         
         TextureDataSection = io.BytesIO(b'')
         for mat,texture in texture_table.items():
-            texture.struct_size = 13 + texture.data_length + texture.emission_data_length
+            texture.struct_size = 13 + 32 + texture.data_length + texture.emission_data_length
             TextureDataSection.write(texture.struct_size.to_bytes(4,byteorder="little"))
             TextureDataSection.write(texture.texture.to_bytes(4,byteorder="little"))
+            TextureDataSection.write(''.join(texture.name).encode("utf-8"))
             TextureDataSection.write(texture.data_length.to_bytes(4,byteorder="little"))
             TextureDataSection.write(''.join(texture.data).encode("utf-8"))
             TextureDataSection.write(texture.emission.to_bytes(1,byteorder="little"))
@@ -505,11 +546,32 @@ class mtex_st:
 class mtexdata_st:
     struct_size = 0
     texture = 0
+    name = []
     data_length = 0
     data = []
     emission = 0
     emission_data_length = 0
     emission_data = []
+
+#MPHY
+class mphy_st:
+    id = 1497911373
+    version = 1
+    checksum = 0
+    
+    phy_count = 0
+    phy_offset = 0
+    
+class mphysdata_st:
+    struct_size = 0
+    index = 0
+    name = []
+    parented = 0
+    boneIndex = 0
+    position = mathutils.Vector((0.0, 0.0, 0.0))
+    angle = mathutils.Euler((0.0, 0.0, 0.0),'XYZ')
+    vertices_count = 0
+    vertices = []
 
 class ExportMADL(Operator, ExportHelper):
     """This appears in the tooltip of the operator and in the generated docs"""
@@ -524,11 +586,16 @@ class ExportMADL(Operator, ExportHelper):
         options={'HIDDEN'},
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
+    add_phy: BoolProperty(
+        name="Add physics",
+        description="Require object with name \"phy\" in rig",
+        default=True,
+    )
 
     # List of operator properties, the attributes will be assigned
     # to the class instance from the operator settings before calling.
     def execute(self, context):
-        return writeMADL(self,context, self.filepath)
+        return writeMADL(self,context, self.filepath, self.add_phy)
 
     
 # Only needed if you want to add into a dynamic menu
