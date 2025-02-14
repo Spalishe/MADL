@@ -1,58 +1,40 @@
 # Made by Spalishe for github.com/Spalishe/MADL
-# Before use it, Separate each rig mesh by materials, because MADL format dont support multiple materials
-# on objects.
-# Also bake all materials, because its finding for Image texture, connected to BSDF
-
-# UNSUPPORTED, SEE V2
 
 import bpy
 import mathutils
-from bpy_extras.io_utils import ExportHelper
-from bpy.props import StringProperty, BoolProperty, EnumProperty
-from bpy.types import Operator
-import io
 import random
-import struct
 import tempfile
-import base64
+from collections import defaultdict
+import io
+import struct
 
 def get_vertex_position_and_normal(obj, bone, vertex_index):
-    """
-    Gets the position and normal of a vertex relative to a bone.
-
-    :param obj: The object with the mesh and armature.
-    :param bone_name: The name of the bone relative to which the data should be retrieved.
-    :param vertex_index: The index of the vertex to retrieve position and normal for.
-    :return: A tuple of position (vector) and normal (vector) in local bone coordinates.
-    """
-    # Get the armature (if it exists)
     armature = obj.find_armature()
     if not armature:
         raise ValueError("The object does not have an armature.")
 
-    # Get the vertex by index
     if vertex_index >= len(obj.data.vertices):
         raise IndexError("Invalid vertex index.")
     
     vertex = obj.data.vertices[vertex_index]
 
-    # Get the vertex position in world coordinates
     world_pos = obj.matrix_world @ vertex.co
 
-    # Get the vertex normal in world coordinates
     world_normal = obj.matrix_world.to_3x3() @ vertex.normal
 
-    # Convert the position and normal to the local coordinates of the bone
     bone_matrix = bone.matrix
     local_pos = bone_matrix.inverted() @ world_pos
     local_normal = bone_matrix.inverted().to_3x3() @ world_normal
 
     return local_pos, local_normal
 
-def get_base_color_texture_from_material(material):
+def get_name(name):
+    return list(name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
+    
+def get_mat_base_texture(material):
     if not material.node_tree:
-        raise ValueError(f"Material {material.name} has no nodes.")
-
+        return None
+    
     material_output_node = None
     for node in material.node_tree.nodes:
         if node.type == 'OUTPUT_MATERIAL':
@@ -60,7 +42,7 @@ def get_base_color_texture_from_material(material):
             break
 
     if not material_output_node:
-        raise ValueError(f"No Material Output node in {material.name}.")
+        return None
         
     bsdf_node = None
     for node in material.node_tree.nodes:
@@ -73,7 +55,7 @@ def get_base_color_texture_from_material(material):
             break
 
     if not bsdf_node:
-        raise ValueError(f"No BSDF node found in {material.name}.")
+        return None
 
     base_color_input = bsdf_node.inputs.get("Base Color")
     if base_color_input and base_color_input.is_linked:
@@ -84,7 +66,12 @@ def get_base_color_texture_from_material(material):
             temp_file = tempfile.gettempdir() + "/base_color_texture.png"
             image.filepath_raw = temp_file
             image.file_format = 'PNG'
-            image.scale(1024,1024) # compression 
+            isc = image.resolution
+            if isc[0] > 1024:
+                isc[0] = 1024
+            if isc[1] > 1024:
+                isc[1] = 1024
+            image.scale(int(isc[0]),int(isc[1])) # compression 
             image.save()
 
             with open(temp_file, "rb") as f:
@@ -93,11 +80,10 @@ def get_base_color_texture_from_material(material):
 
     return None
 
-
-def get_emission_texture_from_material(material):
+def get_mat_emission(material):
     if not material.node_tree:
-        raise ValueError(f"Material {material.name} has no nodes.")
-
+        return None
+    
     material_output_node = None
     for node in material.node_tree.nodes:
         if node.type == 'OUTPUT_MATERIAL':
@@ -105,7 +91,7 @@ def get_emission_texture_from_material(material):
             break
 
     if not material_output_node:
-        raise ValueError(f"No Material Output node in {material.name}.")
+        return None
         
     bsdf_node = None
     for node in material.node_tree.nodes:
@@ -118,7 +104,7 @@ def get_emission_texture_from_material(material):
             break
 
     if not bsdf_node:
-        raise ValueError(f"No BSDF node found in {material.name}.")
+        return None
 
     base_color_input = bsdf_node.inputs.get("Emission")
     if base_color_input and base_color_input.is_linked:
@@ -129,12 +115,16 @@ def get_emission_texture_from_material(material):
             temp_file = tempfile.gettempdir() + "/emission_texture.png"
             image.filepath_raw = temp_file
             image.file_format = 'PNG'
-            image.scale(1024,1024) # compression 
+            isc = image.resolution
+            if isc[0] > 1024:
+                isc[0] = 1024
+            if isc[1] > 1024:
+                isc[1] = 1024
+            image.scale(int(isc[0]),int(isc[1])) # compression 
             image.save()
 
             with open(temp_file, "rb") as f:
                 base64_str = f.read().decode("latin-1")
-
             return base64_str
 
     return None
@@ -150,6 +140,15 @@ def get_objects_parented_to_rig(rig):
 
     return parented_objects
 
+def separate_polygons_by_material(obj):
+    polys_by_material = defaultdict(list)
+
+    for poly in obj.data.polygons:
+        material = obj.data.materials[poly.material_index] if poly.material_index < len(obj.data.materials) else None
+        polys_by_material[material].append(poly)
+
+    return polys_by_material
+
 def get_vertex_uvs(obj):
     if not obj.data.uv_layers:
         return None
@@ -161,234 +160,218 @@ def get_vertex_uvs(obj):
     
     return tbl
 
-def writeMADL(self,context, filepath, add_phy):
-    MST = madl_st()
+def main(self, context, filepath, add_tex, add_phy):
+    MADL = madl_st()
     MTEX = mtex_st()
     MPHY = mphy_st()
     CHCKSUM = random.randint(-2147483648,2147483647)
-    MST.checksum = CHCKSUM
+    
+    MADL.checksum = CHCKSUM
     MTEX.checksum = CHCKSUM
     MPHY.checksum = CHCKSUM
 
     selected_objs = bpy.context.selected_objects
     rigs = [obj for obj in selected_objs if obj.type == 'ARMATURE']
-
-    if len(rigs) > 1:
+    rig = rigs[0]
+    rig.data.pose_position = 'REST'
+    objs = get_objects_parented_to_rig(rig)
+    
+    objects_uvs = {}
+    for obj in objs:
+        objects_uvs[obj] = get_vertex_uvs(obj)
+    
+    if len(rigs) == 0:
         self.report({'ERROR'},"Selected more than one rig.")
         return {'CANCELLED'}
-
-    if len(rigs) == 1:
-        rig = rigs[0]
-        rig.data.pose_position = 'REST'
-
-        mesh_objs = get_objects_parented_to_rig(rig)
+    if len(rigs) > 1:
+        self.report({'ERROR'},"Select only one rig.")
+        return {'CANCELLED'}
+    
+    if add_phy:
+        phy_objs = [obj for obj in selected_objs if "phy" in obj.name]
+        if len(phy_objs) > 1:
+            self.report({'ERROR'},"Rig contains more than one phy object.")
+            return {'CANCELLED'}
+        if len(phy_objs) == 0:
+            self.report({'ERROR'},"Rig has no phy objects")
+            return {'CANCELLED'}
+        phy_obj = phy_objs[0]
+        objs.remove(phy_obj)
         
-        # TODO: make physics
-        if add_phy:
-            phy_obj = [obj for obj in mesh_objs if "phy" in obj.name][0]
-            mesh_objs.remove(phy_obj)
-        
-        MST.name = list(rig.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
-        
-        mesh_to_obj = {}
-        for obj in mesh_objs:
-            mesh_to_obj[obj.data] = obj
-        
-        objects_uvs = {}
-        for obj in mesh_objs:
-            objects_uvs[obj] = get_vertex_uvs(obj)
-        
-        # TEXTURES
-        texture_table = {}
-        text_ind_temp = 0
-        for obj in mesh_objs:
+    # TEXTURE
+    texture_table = {}
+    texture_max_index = 0
+    if add_tex:
+        for obj in objs:
             if len(obj.material_slots) == 0:
                 continue
             for slot in obj.material_slots:
                 mat = slot.material
                 if mat in texture_table.keys():
                     continue
-                base = get_base_color_texture_from_material(mat)
-                dat = mtexdata_st()
-                dat.texture = text_ind_temp
-                text_ind_temp = text_ind_temp + 1
-                dat.data_length = len(base)
-                dat.data = list(base)
-                dat.name = list(mat.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
-                emission = get_emission_texture_from_material(mat)
-                if emission != None:
-                    dat.emission = 1
-                    dat.emission_data_length = len(emission)
-                    dat.emission_data = list(base)
+                base_texture = get_mat_base_texture(mat)
+                emission = get_mat_emission(mat)
                 
-                texture_table[mat] = dat
-        
-        # BONES
-        bones = list(rig.data.bones)
-        bone_table = []
-        for index, bone in enumerate(bones):
-            if bone.parent:
-                parent_index = bones.index(bone.parent)
-                bone_position = bone.head_local - bone.parent.head_local
-
-                euler_current = bone.matrix_local.to_euler()
-                euler_parent = bone.parent.matrix_local.to_euler()
-                bone_angle = (
-                    euler_current[0] - euler_parent[0],
-                    euler_current[1] - euler_parent[1],
-                    euler_current[2] - euler_parent[2]
-                )
-            else:
-                parent_index = -1
-                bone_position = bone.head_local
-                euler_current = bone.matrix_local.to_euler()
-                bone_angle = (euler_current[0], euler_current[1], euler_current[2])
-
-            st = mbone_st()
-            st.index = index
-            st.name = list(bone.name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
-            st.parent = parent_index
-            st.bone_position = bone_position
-            st.bone_angle = bone_angle
-            bone_table.append(st)
+                mtexdata = mtexdata_st()
+                texture_max_index = texture_max_index + 1
+                mtexdata.texture = texture_max_index
+                mtexdata.name = get_name(mat.name)
+                mtexdata.data_length = len(base_texture)
+                mtexdata.data = list(base_texture)
+                if emission != None:
+                    mtexdata.emission = 1
+                    mtexdata.emission_data_length = len(emission)
+                    mtexdata.emission_data = list(emission)
+                
+                mtexdata.struct_size = 45
+                    
+                texture_table[mat] = mtexdata
             
-        # STATIC MESHES
-        
-        fin_meshes_table = []
-        good_triangles = {}
-        bad_triangles = {}
-        for obj in mesh_objs:
-            good_triangles[obj] = {}
-            bad_triangles[obj] = {}
-            for vgroup in obj.vertex_groups:
-                good_triangles[obj.name][vgroup.index] = []
-                bad_triangles[obj.name][vgroup.index] = []
+    # BONES
+    bones = list(rig.data.bones)
+    bone_table = []
+    for index, bone in enumerate(bones):
+        if bone.parent:
+            parent_index = bones.index(bone.parent)
+            bone_position = bone.head_local - bone.parent.head_local
 
-            for poly in obj.data.polygons:
-                """ValidTriag = True
-                for idx in triag.vertices:
-                    vert = obj.data.vertices[idx]
+            euler_current = bone.matrix_local.to_euler()
+            euler_parent = bone.parent.matrix_local.to_euler()
+            bone_angle = (
+                euler_current[0] - euler_parent[0],
+                euler_current[1] - euler_parent[1],
+                euler_current[2] - euler_parent[2]
+            )
+        else:
+            parent_index = -1
+            bone_position = bone.head_local
+            euler_current = bone.matrix_local.to_euler()
+            bone_angle = (euler_current[0], euler_current[1], euler_current[2])
+
+        mbone = mbone_st()
+        mbone.index = index
+        mbone.name = get_name(bone.name)
+        mbone.parent = parent_index
+        mbone.bone_position = bone_position
+        mbone.bone_angle = bone_angle
+        bone_table.append(mbone)
+        
+    # SORTING
+    good_polys = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    bad_polys = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    
+    for obj in objs:
+        polyt = separate_polygons_by_material(obj)
+        for mat,polys in polyt.items():
+            for poly in polys:
+                valid_triag = True
+                for vert_ind in poly.vertices:
+                    vert = obj.data.vertices[vert_ind]
                     groups = vert.groups
                     if len(groups) != 1:
-                        ValidTriag = False
+                        valid_triag = False
                         break
-                    if groups[0].weight != 1.0:
-                        ValidTriag = False
+                    if groups[0].weight != 1:
+                        valid_triag = False
                         break
-                    bone_ind = obj.vertex_groups[groups[0].group].index
-                    if not i in meshes_table.keys():
-                        meshes_table[i] = [bone_ind,[]]
-                    meshes_table[i][1].append(vert)
-                if ValidTriag:
-                    if not obj in used_triags.keys():
-                        used_triags[obj] = []
-                    used_triags[obj].append(triag)""" # GET OUT
-                if len(poly.vertices) != 3:
-                    continue
-
-                for vgroup in obj.vertex_groups:
-                    group_index = vgroup.index
-                    all_weight_one = True
-                    for vert_index in poly.vertices:
-                        weight = None
-                        for g in mesh.vertices[vert_index].groups:
-                            if g.group == group_index:
-                                weight = g.weight
-                                break
-                        if weight != 1:
-                            all_weight_one = False
-                            break
-
-                    if all_weight_one:
-                        good_triangles[obj][group_index].append(poly)
-                    else:
-                        bad_triangles[obj][group_index].append(poly)
-                            
-        
-        # TODO: remake this cuz i stupid
-        
-        i1 = 0
-        for obj,bones in good_triangles.items():
-            for bone_ind,polys in bones.items():
-                bone = rig.data.bones[bone_ind]
-                st1 = mstmesh_st()
-                i1 = i1 + 1
-                st1.index = i1
-                st1.name = list((obj.name+"_sm"+str(bone_ind)).encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
-                st1.parented = 1
-                st1.boneIndex = bone_indx
-                st1.position = mathutils.Vector((0.0,0.0,0.0))
-                st1.angle = mathutils.Euler((0.0, 0.0, 0.0),'XYZ')
-                st1.vertices_count = len(polys)
-                new_vert_array = []
-                for poly in polys:
-                    for vert in poly.vertices:
-                        pos,normal = get_vertex_position_and_normal(obj,bone,vert.index)
-                        uvs_table = objects_uvs[obj]
-                        vertC = m_stvert_st()
-                        vertC.vert_position = pos
-                        vertC.vert_normal = normal
-                        vertC.vert_texcord = uvs_table[vert.index]
-                        new_vert_array.append(vertC)
-                st1.vertices = new_vert_array
-                try:
-                    st1.texture = texture_table[obj.material_slots[0].material].texture
-                except IndexError:
-                    st1.texture = -1
+                if valid_triag:
+                    for vert_ind in poly.vertices:
+                        vert = obj.data.vertices[vert_ind]
+                        good_polys[obj][mat][obj.vertex_groups[vert.groups[0].group].index].append(vert)
+                else:
+                    for vert_ind in poly.vertices:
+                        vert = obj.data.vertices[vert_ind]
+                        bad_polys[obj][mat][obj.vertex_groups[vert.groups[0].group].index].append(vert)
                 
-                fin_meshes_table.append(st1)
-            
-        # DYNAMIC VERTICES
-        dyn_vertx_table = []
-        dyn_indx = 0
-        for obj,bones in bad_triangles.items():
-            for bone_ind,polys in bones.items():
+    # STATIC MESHES
+    static_meshes = []
+    max_static_meshes = 0
+    for obj,mat_list in good_polys.items():
+        for mat,bone_list in mat_list.items():
+            for bone_ind,vert_list in bone_list.items():
+                bone = rig.data.bones[bone_ind]
+                mstmesh = mstmesh_st()
+                max_static_meshes = max_static_meshes + 1
+                mstmesh.index = max_static_meshes
+                mstmesh.name = get_name(obj.name+"_sm_"+str(bone_ind))
+                mstmesh.parented = 1
+                mstmesh.boneIndex = bone_ind
+                mstmesh.position = mathutils.Vector((0.0,0.0,0.0))
+                mstmesh.angle = mathutils.Euler((0.0, 0.0, 0.0),'XYZ')
+                mstmesh.vertices_count = len(vert_list)
+                new_vert_array = []
+                for vert in vert_list:
+                    pos,normal = get_vertex_position_and_normal(obj,bone,vert.index)
+                    uvs_table = objects_uvs[obj]
+                    vertC = m_stvert_st()
+                    vertC.vert_position = pos
+                    vertC.vert_normal = normal
+                    vertC.vert_texcord = uvs_table[vert.index]
+                    new_vert_array.append(vertC)
+                mstmesh.vertices = new_vert_array
+                try:
+                    mstmesh.texture = texture_table[obj.material_slots[0].material].texture
+                except IndexError:
+                    mstmesh.texture = -1
+                except KeyError:
+                    mstmesh.texture = -1
+                static_meshes.append(mstmesh)
+                
+    # DYNAMIC MESHES
+    max_dynamic_meshes = 0
+    dynamic_meshes = []
+    for obj,mat_list in bad_polys.items():
+        for mat,bone_list in mat_list.items():
+            for bone_ind,vert_list in bone_list.items():
                 bone = rig.data.bones[bone_ind]
                 dyn_st = mdynmesh_st()
-                dyn_st.index = dyn_indx
-                dyn_st.name = list((obj.name+"_dm"+str(dyn_indx)).encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
-                dyn_indx = dyn_indx + 1
+                max_dynamic_meshes = max_dynamic_meshes + 1
+                dyn_st.index = max_dynamic_meshes
+                dyn_st.name = get_name(obj.name+"_dm_"+str(max_dynamic_meshes))
                 try:
                     dyn_st.texture = texture_table[obj.material_slots[0].material].texture
                 except IndexError:
                     dyn_st.texture = -1
+                except KeyError:
+                    dyn_st.texture = -1
                 
                 uvs_table = objects_uvs[obj]
                 new_vert_table = []
-                for triag in triag_array:
-                    for vert_ind in triag.vertices:
-                        vert = obj.data.vertices[vert_ind]
-                        dynvert = mdynvert_st()
-                        numbones = 0
-                        weights = []
-                        bone = []
-                        for g in vert.groups:
-                            weights.append(g.weight)
-                            group_name = obj.vertex_groups[g.group].name
-                            bone.append(rig.data.bones.find(group_name))
-                            numbones = numbones + 1
-                        dynvert.numbones = numbones
-                        dynvert.weight = weights
-                        dynvert.bone = bone
-                        dynvert.struct_size = 33 + 8 * numbones
-                        dynvert.vert_position = vert.co
-                        dynvert.vert_normal = vert.normal
-                        dynvert.vert_texcoord = uvs_table[vert.index]
-                        new_vert_table.append(dynvert)
+                for vert in vert_list:
+                    dynvert = mdynvert_st()
+                    numbones = 0
+                    weights = []
+                    bone = []
+                    for g in vert.groups:
+                        weights.append(g.weight)
+                        group_name = obj.vertex_groups[g.group].name
+                        bone.append(rig.data.bones.find(group_name))
+                        numbones = numbones + 1
+                    dynvert.numbones = numbones
+                    dynvert.weight = weights
+                    dynvert.bone = bone
+                    dynvert.struct_size = 33 + 8 * numbones
+                    dynvert.vert_position = vert.co
+                    dynvert.vert_normal = vert.normal
+                    dynvert.vert_texcoord = uvs_table[vert.index]
+                    new_vert_table.append(dynvert)
                 dyn_st.vertices_count = len(new_vert_table)
                 dyn_st.vertices = new_vert_table
-                dyn_vertx_table.append(dyn_st)
-        
-    if len(rigs) == 0:
-        self.report({'ERROR'},"No rigs selected.")
-        return {'CANCELLED'}
+                dynamic_meshes.append(dyn_st)
     
     new_filepath = filepath[:-4]
+    writeMADL(new_filepath,MADL,bone_table,static_meshes,dynamic_meshes)
+    if add_tex: writeMTEX(new_filepath,MTEX,texture_table)
+    
+    rig.data.pose_position = 'POSE'
+    return {'FINISHED'}
+
+def writeMADL(filepath,MADL,bone_table,static_meshes,dynamic_meshes):
     with io.BytesIO(b'') as madl:
-        madl.write(MST.id.to_bytes(4, byteorder="little"))
-        madl.write(MST.version.to_bytes(4, byteorder="little"))
-        madl.write(MST.checksum.to_bytes(4, byteorder="little", signed=True))
-        madl.write(''.join(MST.name).encode("utf-8"))
+        madl.write(MADL.id.to_bytes(4, byteorder="little"))
+        madl.write(MADL.version.to_bytes(4, byteorder="little"))
+        madl.write(MADL.checksum.to_bytes(4, byteorder="little", signed=True))
+        madl.write(''.join(MADL.name).encode("utf-8"))
         
         BonesSection = io.BytesIO(b'')
         for bone in bone_table:
@@ -403,7 +386,7 @@ def writeMADL(self,context, filepath, add_phy):
             BonesSection.write(struct.pack("<f", bone.bone_angle[2]))
         
         StaticMeshSection = io.BytesIO(b'')
-        for stm in fin_meshes_table:
+        for stm in static_meshes:
             stm.struct_size = 70 + len(stm.vertices)*32
             StaticMeshSection.write(stm.struct_size.to_bytes(4,byteorder="little"))
             StaticMeshSection.write(stm.index.to_bytes(4,byteorder="little"))
@@ -429,7 +412,7 @@ def writeMADL(self,context, filepath, add_phy):
             StaticMeshSection.write(stm.texture.to_bytes(1,byteorder="little",signed=True))
             
         DynamicVertxSection = io.BytesIO(b'')
-        for dvm in dyn_vertx_table:
+        for dvm in dynamic_meshes:
             DynamicVertxSection.write(dvm.struct_size.to_bytes(4,byteorder="little"))
             DynamicVertxSection.write(dvm.index.to_bytes(4,byteorder="little"))
             DynamicVertxSection.write(''.join(dvm.name).encode("utf-8"))
@@ -451,13 +434,12 @@ def writeMADL(self,context, filepath, add_phy):
                 DynamicVertxSection.write(struct.pack("<f", vert.vert_texcoord[1]))
             DynamicVertxSection.write(dvm.texture.to_bytes(1,byteorder="little",signed=True))
             
-        
         bones_offset = 68 # Main header end
         bones_count = len(bone_table)
         static_mesh_offset = bones_offset+len(BonesSection.getvalue()) # Bones section end
-        static_mesh_count = len(fin_meshes_table)
+        static_mesh_count = len(static_meshes)
         dvertx_offset = static_mesh_offset+len(StaticMeshSection.getvalue()) # Static meshes section end
-        dvertx_count = len(dyn_vertx_table)
+        dvertx_count = len(dynamic_meshes)
         
         madl.write(bones_count.to_bytes(4,byteorder="little"))
         madl.write(bones_offset.to_bytes(4,byteorder="little"))
@@ -470,9 +452,10 @@ def writeMADL(self,context, filepath, add_phy):
         madl.write(StaticMeshSection.getvalue())
         madl.write(DynamicVertxSection.getvalue())
         
-        with open(new_filepath+"madl", "wb") as f:
+        with open(filepath+"madl", "wb") as f:
             f.write(madl.getbuffer())
-            
+
+def writeMTEX(filepath,MTEX,texture_table):
     with io.BytesIO(b'') as mtex:        
         mtex.write(MTEX.id.to_bytes(4, byteorder="little"))
         mtex.write(MTEX.version.to_bytes(4, byteorder="little"))
@@ -498,11 +481,67 @@ def writeMADL(self,context, filepath, add_phy):
         
         mtex.write(TextureDataSection.getvalue())
         
-        with open(new_filepath+"mtex", "wb") as f:
+        with open(filepath+"mtex", "wb") as f:
             f.write(mtex.getbuffer())
+
+from bpy_extras.io_utils import ExportHelper
+from bpy.props import StringProperty, BoolProperty, EnumProperty
+from bpy.types import Operator
+
+
+class ExportMADL(Operator, ExportHelper):
+    bl_idname = "madl.export"
+    bl_label = "MADL (.madl)"
+
+    filename_ext = ".madl"
+
+    filter_glob: StringProperty(
+        default="*.madl",
+        options={'HIDDEN'},
+        maxlen=255, 
+    )
     
-    rig.data.pose_position = 'POSE'
-    return {'FINISHED'}
+    add_tex: BoolProperty(
+        name="Add textures",
+        description="Create MTEX file.",
+        default=True,
+    )
+    add_phy: BoolProperty(
+        name="Add physics",
+        description="Require object with name \"phy\" in rig.",
+        default=False,
+    )
+
+    """type: EnumProperty(
+        name="Example Enum",
+        description="Choose between two items",
+        items=(
+            ('OPT_A', "First Option", "Description one"),
+            ('OPT_B', "Second Option", "Description two"),
+        ),
+        default='OPT_A',
+    )"""
+
+    def execute(self, context):
+        return main(self,context, self.filepath, self.add_tex, self.add_phy)
+
+def menu_func_export(self, context):
+    self.layout.operator(ExportMADL.bl_idname, text="MADL (.madl)")
+    
+def register():
+    bpy.utils.register_class(ExportMADL)
+    bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
+
+
+def unregister():
+    bpy.utils.unregister_class(ExportMADL)
+    bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
+
+
+if __name__ == "__main__":
+    register()
+
+""" Types, see https://github.com/Spalishe/MADL/blob/main/MADL specification.txt"""
 
 #MADL
 class madl_st:
@@ -599,46 +638,3 @@ class mphysdata_st:
     angle = mathutils.Euler((0.0, 0.0, 0.0),'XYZ')
     vertices_count = 0
     vertices = []
-
-class ExportMADL(Operator, ExportHelper):
-    """This appears in the tooltip of the operator and in the generated docs"""
-    bl_idname = "madl.export"  # important since its how bpy.ops.import_test.some_data is constructed
-    bl_label = "MADL (.madl)"
-
-    # ExportHelper mixin class uses this
-    filename_ext = ".madl"
-
-    filter_glob: StringProperty(
-        default="*.madl",
-        options={'HIDDEN'},
-        maxlen=255,  # Max internal buffer length, longer would be clamped.
-    )
-    add_phy: BoolProperty(
-        name="Add physics",
-        description="Require object with name \"phy\" in rig",
-        default=True,
-    )
-
-    # List of operator properties, the attributes will be assigned
-    # to the class instance from the operator settings before calling.
-    def execute(self, context):
-        return writeMADL(self,context, self.filepath, self.add_phy)
-
-    
-# Only needed if you want to add into a dynamic menu
-def menu_func_export(self, context):
-    self.layout.operator(ExportMADL.bl_idname, text="MADL (.madl)")
-
-
-# Register and add to the "file selector" menu (required to use F3 search "Text Export Operator" for quick access).
-def register():
-    bpy.utils.register_class(ExportMADL)
-    bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
-
-
-def unregister():
-    bpy.utils.unregister_class(ExportMADL)
-    bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
-
-if __name__ == "__main__":
-    register()
