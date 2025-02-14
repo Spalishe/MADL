@@ -172,13 +172,6 @@ def main(self, context, filepath, add_tex, add_phy):
 
     selected_objs = bpy.context.selected_objects
     rigs = [obj for obj in selected_objs if obj.type == 'ARMATURE']
-    rig = rigs[0]
-    rig.data.pose_position = 'REST'
-    objs = get_objects_parented_to_rig(rig)
-    
-    objects_uvs = {}
-    for obj in objs:
-        objects_uvs[obj] = get_vertex_uvs(obj)
     
     if len(rigs) == 0:
         self.report({'ERROR'},"Selected more than one rig.")
@@ -186,9 +179,17 @@ def main(self, context, filepath, add_tex, add_phy):
     if len(rigs) > 1:
         self.report({'ERROR'},"Select only one rig.")
         return {'CANCELLED'}
+    rig = rigs[0]
+    rig.data.pose_position = 'REST'
+    objs = get_objects_parented_to_rig(rig)
+    objects_uvs = {}
+    for obj in objs:
+        objects_uvs[obj] = get_vertex_uvs(obj)
     
+    
+    # PHYSICS
     if add_phy:
-        phy_objs = [obj for obj in selected_objs if "phy" in obj.name]
+        phy_objs = [obj for obj in objs if "phy" in obj.name]
         if len(phy_objs) > 1:
             self.report({'ERROR'},"Rig contains more than one phy object.")
             return {'CANCELLED'}
@@ -197,6 +198,29 @@ def main(self, context, filepath, add_tex, add_phy):
             return {'CANCELLED'}
         phy_obj = phy_objs[0]
         objs.remove(phy_obj)
+        
+        max_phys_index = 0
+        phys_table = []
+        for vg in phy_obj.vertex_groups:
+            group_vertices = [v.index for v in obj.data.vertices if vg.index in [g.group for g in v.groups]]
+
+            if len(group_vertices) > 0:
+                mphysdata = mphysdata_st()
+                max_phys_index = max_phys_index + 1
+                mphysdata.index = max_phys_index
+                mphysdata.name = get_name(phy_obj.name+"_phy_"+str(max_phys_index))
+                mphysdata.parented = 1
+                mphysdata.boneIndex = vg.index
+                mphysdata.position = mathutils.Vector((0.0, 0.0, 0.0))
+                mphysdata.angle = mathutils.Euler((0.0, 0.0, 0.0),'XYZ')
+                mphysdata.vertices_count = len(group_vertices)
+                vertices = []
+                for vert in group_vertices:
+                    pos,normal = get_vertex_position_and_normal(phy_obj,rig.data.bones[vg.index],vert)
+                    vertices.append(pos)
+                mphysdata.vertices = vertices
+                mphysdata.struct_size = 69 + len(group_vertices) * 12
+                phys_table.append(mphysdata)
         
     # TEXTURE
     texture_table = {}
@@ -362,6 +386,7 @@ def main(self, context, filepath, add_tex, add_phy):
     new_filepath = filepath[:-4]
     writeMADL(new_filepath,MADL,bone_table,static_meshes,dynamic_meshes)
     if add_tex: writeMTEX(new_filepath,MTEX,texture_table)
+    if add_phy: writeMPHY(new_filepath,MPHY,phys_table)
     
     rig.data.pose_position = 'POSE'
     return {'FINISHED'}
@@ -473,7 +498,7 @@ def writeMTEX(filepath,MTEX,texture_table):
             TextureDataSection.write(texture.emission_data_length.to_bytes(4,byteorder="little"))
             TextureDataSection.write(''.join(texture.emission_data).encode("utf-8"))
         
-        tex_offset = 12 # Main header end
+        tex_offset = 20 # Main header end
         tex_count = len(texture_table)
         
         mtex.write(tex_count.to_bytes(4,byteorder="little"))
@@ -483,6 +508,42 @@ def writeMTEX(filepath,MTEX,texture_table):
         
         with open(filepath+"mtex", "wb") as f:
             f.write(mtex.getbuffer())
+
+def writeMPHY(filepath,MPHY,phys_table):
+    with io.BytesIO(b'') as mphy:
+        mphy.write(MPHY.id.to_bytes(4, byteorder="little"))
+        mphy.write(MPHY.version.to_bytes(4, byteorder="little"))
+        mphy.write(MPHY.checksum.to_bytes(4, byteorder="little", signed=True))
+        
+        PhyDataSection = io.BytesIO(b'')
+        for phy in phys_table:
+            PhyDataSection.write(phy.struct_size.to_bytes(4,byteorder="little"))
+            PhyDataSection.write(phy.index.to_bytes(4,byteorder="little"))
+            PhyDataSection.write(''.join(phy.name).encode("utf-8"))
+            PhyDataSection.write(phy.parented.to_bytes(1,byteorder="little"))
+            PhyDataSection.write(phy.boneIndex.to_bytes(4,byteorder="little"))
+            PhyDataSection.write(struct.pack("<f", phy.position[0]))
+            PhyDataSection.write(struct.pack("<f", phy.position[1]))
+            PhyDataSection.write(struct.pack("<f", phy.position[2]))
+            PhyDataSection.write(struct.pack("<f", phy.angle[0]))
+            PhyDataSection.write(struct.pack("<f", phy.angle[1]))
+            PhyDataSection.write(struct.pack("<f", phy.angle[2]))
+            PhyDataSection.write(phy.vertices_count.to_bytes(4,byteorder="little"))
+            for vert in phy.vertices:
+                PhyDataSection.write(struct.pack("<f", vert[0]))
+                PhyDataSection.write(struct.pack("<f", vert[1]))
+                PhyDataSection.write(struct.pack("<f", vert[2]))
+        
+        phy_offset = 20 # Main header end
+        phy_count = len(phys_table)
+        
+        mphy.write(phy_count.to_bytes(4,byteorder="little"))
+        mphy.write(phy_offset.to_bytes(4,byteorder="little"))
+        
+        mphy.write(PhyDataSection.getvalue())
+        
+        with open(filepath+"mphy", "wb") as f:
+            f.write(mphy.getbuffer())
 
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
