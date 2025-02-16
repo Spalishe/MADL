@@ -7,6 +7,7 @@ import tempfile
 from collections import defaultdict
 import io
 import struct
+import subprocess
 
 def get_vertex_position_and_normal(obj, bone, vertex_index):
     armature = obj.find_armature()
@@ -31,7 +32,7 @@ def get_vertex_position_and_normal(obj, bone, vertex_index):
 def get_name(name):
     return list(name.encode("utf-8").ljust(32,b"\x00").decode("utf-8"))
     
-def get_mat_base_texture(material):
+def get_mat_base_texture(material,tex_type):
     if not material.node_tree:
         return None
     
@@ -63,24 +64,22 @@ def get_mat_base_texture(material):
         if image_texture_node.type == 'TEX_IMAGE':
             image = image_texture_node.image
 
-            temp_file = tempfile.gettempdir() + "/base_color_texture.png"
+            temp_file = tempfile.gettempdir() + "/base_texture_"+str(random.randint(0,0xFFFF))+"."+tex_type.lower()
+            orig_image = image.pixels
             image.filepath_raw = temp_file
-            image.file_format = 'PNG'
-            isc = image.resolution
-            if isc[0] > 1024:
-                isc[0] = 1024
-            if isc[1] > 1024:
-                isc[1] = 1024
-            image.scale(int(isc[0]),int(isc[1])) # compression 
+            image.file_format = tex_type == "VTF" and "PNG" or tex_type
             image.save()
+            
+            image.pixels = orig_image
+            image.update()
 
             with open(temp_file, "rb") as f:
                 base64_str = f.read().decode("latin-1")
-            return base64_str
+            return base64_str,temp_file
 
     return None
 
-def get_mat_emission(material):
+def get_mat_emission(material,tex_type):
     if not material.node_tree:
         return None
     
@@ -112,22 +111,42 @@ def get_mat_emission(material):
         if image_texture_node.type == 'TEX_IMAGE':
             image = image_texture_node.image
 
-            temp_file = tempfile.gettempdir() + "/emission_texture.png"
+            temp_file = tempfile.gettempdir() + "/emission_texture_"+str(random.randint(0,0xFFFF))+"."+tex_type.lower()
+            orig_image = image.pixels
             image.filepath_raw = temp_file
-            image.file_format = 'PNG'
-            isc = image.resolution
-            if isc[0] > 1024:
-                isc[0] = 1024
-            if isc[1] > 1024:
-                isc[1] = 1024
-            image.scale(int(isc[0]),int(isc[1])) # compression 
+            image.file_format = tex_type == "VTF" and "PNG" or tex_type
             image.save()
-
+            
+            image.pixels = orig_image
+            image.update()
+                        
             with open(temp_file, "rb") as f:
                 base64_str = f.read().decode("latin-1")
-            return base64_str
+            return base64_str,temp_file
 
     return None
+
+def textureToVtf(mat_name,base_filepath, emission_filepath, vtfcmd_path):
+    print("VTF Handling: "+mat_name)
+    base_tex_proc = subprocess.run([vtfcmd_path, f"-file \"{base_filepath}\"", "-format \"dxt1\"", "-alphaformat \"dxt1_onebitalpha\"", "-nothumbnail", "-noreflectivity", "-nomipmaps"], stdout=subprocess.PIPE)
+    if emission_filepath != None:
+        emission_proc = subprocess.run([vtfcmd_path, f"-file \"{emission_filepath}\"", "-format \"dxt1\"", "-alphaformat \"dxt1_onebitalpha\"", "-nothumbnail", "-noreflectivity", "-nomipmaps"], stdout=subprocess.PIPE)
+    
+    if base_tex_proc.returncode == 0:
+        new_bt_filepath = base_filepath.split('.')[0] + ".vtf"
+        with open(new_bt_filepath,"rb") as f:
+            base_tex_data = f.read()
+    else:
+        base_tex_data = None
+    
+    if emission_proc.returncode == 0:
+        new_emission_filepath = emission_filepath.split('.')[0] + ".vtf"
+        with open(new_emission_filepath,"rb") as f:
+            emmision_data = f.read()
+    else:
+        emmision_data = None
+        
+    return [mat_name,base_tex_data,emmision_data]
 
 def get_objects_parented_to_rig(rig):
     parented_objects = []
@@ -160,7 +179,7 @@ def get_vertex_uvs(obj):
     
     return tbl
 
-def main(self, context, filepath, add_tex, add_phy):
+def main(self, context, filepath, add_tex, add_phy, tex_type, vtfcmd_path):
     MADL = madl_st()
     MTEX = mtex_st()
     MPHY = mphy_st()
@@ -233,23 +252,44 @@ def main(self, context, filepath, add_tex, add_phy):
                 mat = slot.material
                 if mat in texture_table.keys():
                     continue
-                base_texture = get_mat_base_texture(mat)
-                emission = get_mat_emission(mat)
+                base_texture,bt_path = get_mat_base_texture(mat,tex_type)
+                emission,et_path = get_mat_emission(mat,tex_type)
                 
-                mtexdata = mtexdata_st()
-                texture_max_index = texture_max_index + 1
-                mtexdata.texture = texture_max_index
-                mtexdata.name = get_name(mat.name)
-                mtexdata.data_length = len(base_texture)
-                mtexdata.data = list(base_texture)
-                if emission != None:
-                    mtexdata.emission = 1
-                    mtexdata.emission_data_length = len(emission)
-                    mtexdata.emission_data = list(emission)
-                
-                mtexdata.struct_size = 45
+                if tex_type != "VTF":
+                    mtexdata = mtexdata_st()
+                    texture_max_index = texture_max_index + 1
+                    mtexdata.texture = texture_max_index
+                    mtexdata.name = get_name(mat.name)
+                    mtexdata.data_length = len(base_texture)
+                    mtexdata.data = list(base_texture)
+                    if emission != None:
+                        mtexdata.emission = 1
+                        mtexdata.emission_data_length = len(emission)
+                        mtexdata.emission_data = list(emission)
                     
-                texture_table[mat] = mtexdata
+                    mtexdata.struct_size = 45
+                    
+                    texture_table[mat] = mtexdata
+                else:
+                    data = textureToVtf(mat.name,bt_path,emission != None and et_path or None,vtfcmd_path)
+                    mat_name = data[0]
+                    base_data = data[1]
+                    emission_data = data[2]
+                    mtexdata = mtexdata_st()
+                    texture_max_index = texture_max_index + 1
+                    mtexdata.texture = texture_max_index
+                    mtexdata.name = get_name(mat.name)
+                    if base_data != None:
+                        mtexdata.data_length = len(base_data)
+                        mtexdata.data = list(base_data)
+                    if emission_data != None:
+                        mtexdata.emission = 1
+                        mtexdata.emission_data_length = len(emission_data)
+                        mtexdata.emission_data = list(emission_data)
+                    
+                    mtexdata.struct_size = 45
+                    
+                    texture_table[mat] = mtexdata
             
     # BONES
     bones = list(rig.data.bones)
@@ -549,7 +589,6 @@ from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator
 
-
 class ExportMADL(Operator, ExportHelper):
     bl_idname = "madl.export"
     bl_label = "MADL (.madl)"
@@ -561,30 +600,53 @@ class ExportMADL(Operator, ExportHelper):
         options={'HIDDEN'},
         maxlen=255, 
     )
+    add_phy: BoolProperty(
+        name="Add physics",
+        description="Require object with name \"phy\" in rig.",
+        default=False,
+    )
     
     add_tex: BoolProperty(
         name="Add textures",
         description="Create MTEX file.",
         default=True,
     )
-    add_phy: BoolProperty(
-        name="Add physics",
-        description="Require object with name \"phy\" in rig.",
-        default=False,
-    )
 
-    """type: EnumProperty(
-        name="Example Enum",
-        description="Choose between two items",
+    tex_type: EnumProperty(
+        name="Texture format",
+        description="Images type",
         items=(
-            ('OPT_A', "First Option", "Description one"),
-            ('OPT_B', "Second Option", "Description two"),
+            ('PNG', ".PNG", "Export as Portable Network Graphics"),
+            ('JPEG', ".JPEG (.JPG)", "Export as Joint Photographic Expert Group"),
+            ('VTF', ".VTF", "Export as Valve Texture Format"),
         ),
-        default='OPT_A',
-    )"""
+        default='PNG',
+    )
+    
+    # If you cant download VTFCMD go to
+    # https://web.archive.org/web/20191223154323if_/http://nemesis.thewavelength.net/files/files/vtflib132.zip
+    # Unpack, VTFCMD in bin\x64\
+    # If you copying, dont forget to copy all DLL's
+    vtfcmd_path: StringProperty(
+        name="VTFCMD path",
+        description="Must be a valid path to VTFCMD",
+        default='',
+    )
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "add_tex")
+
+        column = layout.column()
+        column.enabled = self.add_tex
+        column.prop(self, "tex_type")
+        if self.tex_type == "VTF":
+            column.prop(self, "vtfcmd_path")
+
+        layout.prop(self, "add_phy")
 
     def execute(self, context):
-        return main(self,context, self.filepath, self.add_tex, self.add_phy)
+        return main(self,context, self.filepath, self.add_tex, self.add_phy, self.tex_type, self.vtfcmd_path)
 
 def menu_func_export(self, context):
     self.layout.operator(ExportMADL.bl_idname, text="MADL (.madl)")
