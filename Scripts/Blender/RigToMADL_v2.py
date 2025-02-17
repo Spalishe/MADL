@@ -8,6 +8,7 @@ from collections import defaultdict
 import io
 import struct
 import subprocess
+import threading
 
 def get_vertex_position_and_normal(obj, bone, vertex_index):
     armature = obj.find_armature()
@@ -34,7 +35,7 @@ def get_name(name):
     
 def get_mat_base_texture(material,tex_type):
     if not material.node_tree:
-        return None
+        return [None,None]
     
     material_output_node = None
     for node in material.node_tree.nodes:
@@ -43,7 +44,7 @@ def get_mat_base_texture(material,tex_type):
             break
 
     if not material_output_node:
-        return None
+        return [None,None]
         
     bsdf_node = None
     for node in material.node_tree.nodes:
@@ -56,32 +57,32 @@ def get_mat_base_texture(material,tex_type):
             break
 
     if not bsdf_node:
-        return None
+        return [None,None]
 
     base_color_input = bsdf_node.inputs.get("Base Color")
     if base_color_input and base_color_input.is_linked:
         image_texture_node = base_color_input.links[0].from_node
         if image_texture_node.type == 'TEX_IMAGE':
             image = image_texture_node.image
-
+            
             temp_file = tempfile.gettempdir() + "/base_texture_"+str(random.randint(0,0xFFFF))+"."+(tex_type.lower() == "vtf" and "png" or tex_type.lower())
             orig_image = image.pixels
             image.filepath_raw = temp_file
             image.file_format = tex_type == "VTF" and "PNG" or tex_type
             image.save()
             
-            image.pixels = orig_image
-            image.update()
+            #image.pixels = orig_image
+            #image.update()
 
             with open(temp_file, "rb") as f:
                 base64_str = f.read().decode("latin-1")
-            return base64_str,temp_file
+            return [base64_str,temp_file]
 
-    return None
+    return [None,None]
 
 def get_mat_emission(material,tex_type):
     if not material.node_tree:
-        return None
+        return [None,None]
     
     material_output_node = None
     for node in material.node_tree.nodes:
@@ -90,7 +91,7 @@ def get_mat_emission(material,tex_type):
             break
 
     if not material_output_node:
-        return None
+        return [None,None]
         
     bsdf_node = None
     for node in material.node_tree.nodes:
@@ -103,7 +104,7 @@ def get_mat_emission(material,tex_type):
             break
 
     if not bsdf_node:
-        return None
+        return [None,None]
 
     base_color_input = bsdf_node.inputs.get("Emission")
     if base_color_input and base_color_input.is_linked:
@@ -117,20 +118,20 @@ def get_mat_emission(material,tex_type):
             image.file_format = tex_type == "VTF" and "PNG" or tex_type
             image.save()
             
-            image.pixels = orig_image
-            image.update()
+            #image.pixels = orig_image
+            #image.update()
                         
             with open(temp_file, "rb") as f:
                 base64_str = f.read().decode("latin-1")
-            return base64_str,temp_file
+            return [base64_str,temp_file]
 
-    return None
+    return [None,None]
 
-def textureToVtf(mat_name,base_filepath, emission_filepath, vtfcmd_path):
-    print("VTF Handling: "+mat_name)
+def textureToVtf(idx,mat,base_filepath, emission_filepath, vtfcmd_path,vtf_results):
+    print("VTF Handling: "+mat.name)
     base_tex_proc = subprocess.run(f"{vtfcmd_path} -file \"{base_filepath}\" -format \"dxt1_onebitalpha\" -alphaformat \"dxt1_onebitalpha\" -nothumbnail -noreflectivity -nomipmaps", stdout=subprocess.PIPE)
-    
     print(base_tex_proc.stdout)
+    
     if emission_filepath != None:
         emission_proc = subprocess.run(f"{vtfcmd_path} -file \"{emission_filepath}\" -format \"dxt1_onebitalpha\" -alphaformat \"dxt1_onebitalpha\" -nothumbnail -noreflectivity -nomipmaps", stdout=subprocess.PIPE)
         print(emission_proc.stdout)
@@ -138,18 +139,20 @@ def textureToVtf(mat_name,base_filepath, emission_filepath, vtfcmd_path):
     if base_tex_proc.returncode == 0:
         new_bt_filepath = base_filepath.split('.')[0] + ".vtf"
         with open(new_bt_filepath,"rb") as f:
-            base_tex_data = f.read()
+            base_tex_data = f.read().decode("latin-1")
     else:
         base_tex_data = None
     
-    if emission_proc.returncode == 0:
-        new_emission_filepath = emission_filepath.split('.')[0] + ".vtf"
-        with open(new_emission_filepath,"rb") as f:
-            emmision_data = f.read()
-    else:
-        emmision_data = None
-        
-    return [mat_name,base_tex_data,emmision_data]
+    emmision_data = None
+    if emission_filepath != None:
+        if emission_proc.returncode == 0:
+            new_emission_filepath = emission_filepath.split('.')[0] + ".vtf"
+            with open(new_emission_filepath,"rb") as f:
+                emmision_data = f.read().decode("latin-1")
+        else:
+            emmision_data = None
+            
+    vtf_results[idx] = [mat,base_tex_data,emmision_data]
 
 def get_objects_parented_to_rig(rig):
     parented_objects = []
@@ -247,16 +250,24 @@ def main(self, context, filepath, add_tex, add_phy, tex_type, vtfcmd_path):
     # TEXTURE
     texture_table = {}
     texture_max_index = 0
+    idx = 0
+    vtf_mats = []
+    vtf_results = {}
+    vtf_threads = []
     if add_tex:
         for obj in objs:
             if len(obj.material_slots) == 0:
                 continue
             for slot in obj.material_slots:
                 mat = slot.material
-                if mat in texture_table.keys():
+                if mat in texture_table.keys() or mat in vtf_mats:
                     continue
-                base_texture,bt_path = get_mat_base_texture(mat,tex_type)
-                emission,et_path = get_mat_emission(mat,tex_type)
+                base_data = get_mat_base_texture(mat,tex_type)
+                base_texture = base_data[0]
+                bt_path = base_data[1]
+                emission_data = get_mat_emission(mat,tex_type)
+                emission = emission_data[0]
+                et_path = emission_data[1]
                 
                 if tex_type != "VTF":
                     mtexdata = mtexdata_st()
@@ -274,25 +285,35 @@ def main(self, context, filepath, add_tex, add_phy, tex_type, vtfcmd_path):
                     
                     texture_table[mat] = mtexdata
                 else:
-                    data = textureToVtf(mat.name,bt_path,emission != None and et_path or None,vtfcmd_path)
-                    mat_name = data[0]
-                    base_data = data[1]
-                    emission_data = data[2]
-                    mtexdata = mtexdata_st()
-                    texture_max_index = texture_max_index + 1
-                    mtexdata.texture = texture_max_index
-                    mtexdata.name = get_name(mat.name)
-                    if base_data != None:
-                        mtexdata.data_length = len(base_data)
-                        mtexdata.data = list(base_data)
-                    if emission_data != None:
-                        mtexdata.emission = 1
-                        mtexdata.emission_data_length = len(emission_data)
-                        mtexdata.emission_data = list(emission_data)
-                    
-                    mtexdata.struct_size = 45
-                    
-                    texture_table[mat] = mtexdata
+                    vtf_mats.append(mat)
+                    p = threading.Thread(target=textureToVtf,
+                        args=(idx,mat, bt_path,emission != None and et_path or None,vtfcmd_path,vtf_results))
+                    vtf_threads.append(p)
+                    p.start()
+                    idx = idx + 1
+        if tex_type == "VTF":
+            for p in vtf_threads:
+                p.join()
+                
+        for idx,data in vtf_results.items():
+            mat = data[0]
+            base_data = data[1]
+            emission_data = data[2]
+            mtexdata = mtexdata_st()
+            texture_max_index = texture_max_index + 1
+            mtexdata.texture = texture_max_index
+            mtexdata.name = get_name(mat.name)
+            if base_data != None:
+                mtexdata.data_length = len(base_data)
+                mtexdata.data = list(base_data)
+            if emission_data != None:
+                mtexdata.emission = 1
+                mtexdata.emission_data_length = len(emission_data)
+                mtexdata.emission_data = list(emission_data)
+            
+            mtexdata.struct_size = 45
+            
+            texture_table[mat] = mtexdata
             
     # BONES
     bones = list(rig.data.bones)
