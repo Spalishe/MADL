@@ -64,7 +64,7 @@ def get_mat_base_texture(material,tex_type):
         if image_texture_node.type == 'TEX_IMAGE':
             image = image_texture_node.image
 
-            temp_file = tempfile.gettempdir() + "/base_texture_"+str(random.randint(0,0xFFFF))+"."+tex_type.lower()
+            temp_file = tempfile.gettempdir() + "/base_texture_"+str(random.randint(0,0xFFFF))+"."+(tex_type.lower() == "vtf" and "png" or tex_type.lower())
             orig_image = image.pixels
             image.filepath_raw = temp_file
             image.file_format = tex_type == "VTF" and "PNG" or tex_type
@@ -111,7 +111,7 @@ def get_mat_emission(material,tex_type):
         if image_texture_node.type == 'TEX_IMAGE':
             image = image_texture_node.image
 
-            temp_file = tempfile.gettempdir() + "/emission_texture_"+str(random.randint(0,0xFFFF))+"."+tex_type.lower()
+            temp_file = tempfile.gettempdir() + "/emission_texture_"+str(random.randint(0,0xFFFF))+"."+(tex_type.lower() == "vtf" and "png" or tex_type.lower())
             orig_image = image.pixels
             image.filepath_raw = temp_file
             image.file_format = tex_type == "VTF" and "PNG" or tex_type
@@ -128,9 +128,12 @@ def get_mat_emission(material,tex_type):
 
 def textureToVtf(mat_name,base_filepath, emission_filepath, vtfcmd_path):
     print("VTF Handling: "+mat_name)
-    base_tex_proc = subprocess.run([vtfcmd_path, f"-file \"{base_filepath}\"", "-format \"dxt1\"", "-alphaformat \"dxt1_onebitalpha\"", "-nothumbnail", "-noreflectivity", "-nomipmaps"], stdout=subprocess.PIPE)
+    base_tex_proc = subprocess.run(f"{vtfcmd_path} -file \"{base_filepath}\" -format \"dxt1_onebitalpha\" -alphaformat \"dxt1_onebitalpha\" -nothumbnail -noreflectivity -nomipmaps", stdout=subprocess.PIPE)
+    
+    print(base_tex_proc.stdout)
     if emission_filepath != None:
-        emission_proc = subprocess.run([vtfcmd_path, f"-file \"{emission_filepath}\"", "-format \"dxt1\"", "-alphaformat \"dxt1_onebitalpha\"", "-nothumbnail", "-noreflectivity", "-nomipmaps"], stdout=subprocess.PIPE)
+        emission_proc = subprocess.run(f"{vtfcmd_path} -file \"{emission_filepath}\" -format \"dxt1_onebitalpha\" -alphaformat \"dxt1_onebitalpha\" -nothumbnail -noreflectivity -nomipmaps", stdout=subprocess.PIPE)
+        print(emission_proc.stdout)
     
     if base_tex_proc.returncode == 0:
         new_bt_filepath = base_filepath.split('.')[0] + ".vtf"
