@@ -27,6 +27,7 @@ struct manimdata_st {
 };
 
 struct mbonepos_t {
+	// Note: if this is the first frame, position/rotation is local to rest pos
     byte flags;     // Bit mask: indicates which channels (position/rotation) are animated, see MBONEFLAGS
 	byte boneIndex; // Bone index																					 
     short posX;     // Quantized delta for X-axis position
