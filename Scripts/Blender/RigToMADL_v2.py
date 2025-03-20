@@ -185,15 +185,17 @@ def get_vertex_uvs(obj):
     
     return tbl
 
-def main(self, context, filepath, add_tex, add_phy, tex_type, vtfcmd_path):
+def main(self, context, filepath, add_tex, add_phy, add_anim, tex_type, vtfcmd_path):
     MADL = madl_st()
     MTEX = mtex_st()
     MPHY = mphy_st()
+    MANI = mani_st()
     CHCKSUM = random.randint(-2147483648,2147483647)
     
     MADL.checksum = CHCKSUM
     MTEX.checksum = CHCKSUM
     MPHY.checksum = CHCKSUM
+    MANI.checksum = CHCKSUM
 
     selected_objs = bpy.context.selected_objects
     rigs = [obj for obj in selected_objs if obj.type == 'ARMATURE']
@@ -344,6 +346,86 @@ def main(self, context, filepath, add_tex, add_phy, tex_type, vtfcmd_path):
         mbone.bone_angle = bone_angle
         bone_table.append(mbone)
         
+    # ANIMATIONS
+    anim_table = []
+    anim_index = 0
+    flags = MBONEFLAGS()
+    actions = []
+    if rig.animation_data:
+        if rig.animation_data.action:
+            actions.append(rig.animation_data.action)
+        
+        for track in rig.animation_data.nla_tracks:
+            for strip in track.strips:
+                if strip.action:
+                    actions.append(strip.action)
+    for action in actions:
+        ManiSeq = manimseq_st()
+        ManiSeq.index = anim_index
+        ManiSeq.name = get_name(action.name)
+        
+        rig.animation_data.action = action
+
+        start_frame = int(action.frame_range[0])
+        end_frame = int(action.frame_range[1])
+        ManiSeq.numFrames = end_frame
+        ManiSeq.fps = bpy.context.scene.render.fps
+
+        rest_pose = {bone.name: (bone.bone.head_local.copy(), bone.bone.matrix_local.to_quaternion()) for bone in rig.pose.bones}
+        data_arr = []
+        
+        prev_transforms = {}
+        for frame in range(start_frame, end_frame + 1):
+            bpy.context.scene.frame_set(frame)
+            ManiData = manimdata_st()
+            ManiData.frame = frame
+            for index,bone in enumerate(rig.pose.bones):
+                BonePos = mbonepos_t()
+                bone_name = bone.name
+                current_pos = bone.head
+                current_rot = bone.matrix.to_quaternion()
+
+                if frame == start_frame:
+                    prev_pos, prev_rot = rest_pose[bone_name]
+                else:
+                    prev_pos, prev_rot = prev_transforms.get(bone_name, (current_pos, current_rot))
+
+                delta_pos = current_pos - prev_pos
+                delta_rot = (current_rot * prev_rot.inverted()).to_euler()
+                
+                Flags = flags.NOCHANGES
+                
+                # !!! CRINGE DETECTED !!!
+                if delta_pos.x == 0:
+                    Flags = Flags | flags.POSX
+                if delta_pos.y == 0:
+                    Flags = Flags | flags.POSY
+                if delta_pos.z == 0:
+                    Flags = Flags | flags.POSZ
+
+                if delta_rot.x == 0:
+                    Flags = Flags | flags.ROTX
+                if delta_rot.y == 0:
+                    Flags = Flags | flags.ROTY
+                if delta_rot.z == 0:
+                    Flags = Flags | flags.ROTZ
+                
+                prev_transforms[bone_name] = (current_pos, current_rot)
+                BonePos.flags = Flags
+                BonePos.boneIndex = index
+                BonePos.posX = delta_pos.x
+                BonePos.posY = delta_pos.y
+                BonePos.posZ = delta_pos.z
+                BonePos.rotX = delta_rot.x
+                BonePos.rotY = delta_rot.y
+                BonePos.rotZ = delta_rot.z
+                ManiData.bone.append(BonePos)
+            data_arr.append(ManiData)
+        anim_index = anim_index + 1
+        ManiSeq.frames = data_arr
+        anim_table.append(ManiSeq)
+    MANI.num_sequences = len(bpy.data.actions)
+        
     # SORTING
     good_polys = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     bad_polys = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
@@ -451,6 +533,7 @@ def main(self, context, filepath, add_tex, add_phy, tex_type, vtfcmd_path):
     writeMADL(new_filepath,MADL,bone_table,static_meshes,dynamic_meshes)
     if add_tex: writeMTEX(new_filepath,MTEX,texture_table)
     if add_phy: writeMPHY(new_filepath,MPHY,phys_table)
+    if add_anim: writeMANI(new_filepath,MANI,anim_table)
     
     rig.data.pose_position = 'POSE'
     return {'FINISHED'}
@@ -609,6 +692,47 @@ def writeMPHY(filepath,MPHY,phys_table):
         with open(filepath+"mphy", "wb") as f:
             f.write(mphy.getbuffer())
 
+def writeMANI(filepath,MANI,anim_table):
+    with io.BytesIO(b'') as mani:
+        mani.write(MANI.id.to_bytes(4, byteorder="little"))
+        mani.write(MANI.version.to_bytes(4, byteorder="little"))
+        mani.write(MANI.checksum.to_bytes(4, byteorder="little", signed=True))
+        
+        MANI.seq_offset = 20
+        
+        mani.write(MANI.num_sequences.to_bytes(4, byteorder="little"))
+        mani.write(MANI.seq_offset.to_bytes(4, byteorder="little"))
+        
+        AnimSeqSection = io.BytesIO(b'')
+        for seq in anim_table:
+            AnimSeqSection.write(seq.index.to_bytes(4,byteorder="little"))
+            AnimSeqSection.write(''.join(seq.name).encode("utf-8"))
+            AnimSeqSection.write(seq.numFrames.to_bytes(4,byteorder="little"))
+            AnimSeqSection.write(seq.fps.to_bytes(1,byteorder="little"))
+            
+            AnimDataSection = io.BytesIO(b'')
+            for dat in seq.frames:
+                AnimDataSection.write(dat.frame.to_bytes(2,byteorder="little"))
+                for bone in dat.bone:
+                    AnimDataSection.write(bone.flags.to_bytes(1,byteorder="little"))
+                    AnimDataSection.write(bone.boneIndex.to_bytes(1,byteorder="little"))
+                    if (bone.flags & 0x1) != 0:
+                        AnimDataSection.write(struct.unpack('H', struct.pack('e', bone.posX))[0].to_bytes(2,byteorder="little"))
+                    if (bone.flags & 0x2) != 0:
+                        AnimDataSection.write(struct.unpack('H', struct.pack('e', bone.posY))[0].to_bytes(2,byteorder="little"))
+                    if (bone.flags & 0x4) != 0:
+                        AnimDataSection.write(struct.unpack('H', struct.pack('e', bone.posZ))[0].to_bytes(2,byteorder="little"))
+                    if (bone.flags & 0x8) != 0:
+                        AnimDataSection.write(struct.unpack('H', struct.pack('e', bone.rotX))[0].to_bytes(2,byteorder="little"))
+                    if (bone.flags & 0x10) != 0:
+                        AnimDataSection.write(struct.unpack('H', struct.pack('e', bone.rotY))[0].to_bytes(2,byteorder="little"))
+                    if (bone.flags & 0x20) != 0:
+                        AnimDataSection.write(struct.unpack('H', struct.pack('e', bone.rotZ))[0].to_bytes(2,byteorder="little"))
+            AnimSeqSection.write(AnimDataSection.getvalue())
+        mani.write(AnimSeqSection.getvalue())
+        with open(filepath+"mani", "wb") as f:
+            f.write(mani.getbuffer())
+
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator
@@ -634,6 +758,12 @@ class ExportMADL(Operator, ExportHelper):
         name="Add textures",
         description="Create MTEX file.",
         default=True,
+    )
+    
+    add_anim: BoolProperty(
+        name="Add animations",
+        description="Create MANI file.",
+        default=False,
     )
 
     tex_type: EnumProperty(
@@ -668,9 +798,10 @@ class ExportMADL(Operator, ExportHelper):
             column.prop(self, "vtfcmd_path")
 
         layout.prop(self, "add_phy")
+        layout.prop(self, "add_anim")
 
     def execute(self, context):
-        return main(self,context, self.filepath, self.add_tex, self.add_phy, self.tex_type, self.vtfcmd_path)
+        return main(self,context, self.filepath, self.add_tex, self.add_phy, self.add_anim, self.tex_type, self.vtfcmd_path)
 
 def menu_func_export(self, context):
     self.layout.operator(ExportMADL.bl_idname, text="MADL (.madl)")
@@ -785,3 +916,43 @@ class mphysdata_st:
     angle = mathutils.Euler((0.0, 0.0, 0.0),'XYZ')
     vertices_count = 0
     vertices = []
+    
+#MANI
+class mani_st:
+    id = 1229865293
+    version = 1
+    checksum = 0
+    
+    num_sequences = 0
+    seq_offset = 0
+    
+class manimseq_st:
+    index = 0
+    name = []
+    numFrames = 0
+    fps = 24 # got real
+    
+    frames = []
+    
+class manimdata_st:
+    frame = 0
+    bone = []
+    
+class mbonepos_t:
+    flags = 0x0
+    boneIndex = 0
+    posX = 0
+    posY = 0
+    posZ = 0
+    rotX = 0
+    rotY = 0
+    rotZ = 0
+
+class MBONEFLAGS:
+    NOCHANGES = 0x0
+    POSX = 0x1
+    POSY = 0x2
+    POSZ = 0x4
+    ROTX = 0x8
+    ROTY = 0x10
+    ROTZ = 0x20

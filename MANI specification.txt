@@ -6,8 +6,8 @@ struct mani_st {
     int version;        // Format version, e.g., 1
     int checksum;       // Must be identical across related sections (e.g., MADL, MPHY, MTEX)
 
-    int numSequences;   // Number of animation sequences (equivalent to anims_count)
-    int seqOffset;      // Offset from start of file to the first mstudioseq_t
+    int numSequences;   // Number of animation sequences
+    int seqOffset;      // Offset from start of file to the first manimseq_st
 };
 
 struct manimseq_st {
@@ -16,14 +16,15 @@ struct manimseq_st {
     int numFrames;      // Number of frames in the sequence
     byte fps;           // Playback speed in frames per second
 
-    int animOffset;     // Offset from start of sequence structure to animation data (manimdata_st)
+    manimdata_st frames[numFrames];     // Array of frames (manimdata_st)
 };
 
 struct manimdata_st {
     // For each bone in the model (total defined in madl_st.bone_count),
     // animation keyframe data is stored using delta encoding.
     // The array size here is a placeholder; the actual size is determined at runtime.
-    mbonepos_t bone[1]; // Array of bone animation data (actual size equals numBones)
+	short frame;		// Self-Explanatory
+    mbonepos_t bone[1]; // Array of bone animation data (actual size equals madl_st.bone_count)
 };
 
 struct mbonepos_t {
