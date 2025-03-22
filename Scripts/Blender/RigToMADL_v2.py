@@ -714,6 +714,8 @@ def writeMANI(filepath,MANI,anim_table):
             for dat in seq.frames:
                 AnimDataSection.write(dat.frame.to_bytes(2,byteorder="little"))
                 for bone in dat.bone:
+                    if bone.flags == 0:
+                        continue
                     AnimDataSection.write(bone.flags.to_bytes(1,byteorder="little"))
                     AnimDataSection.write(bone.boneIndex.to_bytes(1,byteorder="little"))
                     if (bone.flags & 0x1) != 0:
