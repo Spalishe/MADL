@@ -212,6 +212,8 @@ def main(self, context, filepath, add_tex, add_phy, add_anim, tex_type, vtfcmd_p
     objects_uvs = {}
     for obj in objs:
         objects_uvs[obj] = get_vertex_uvs(obj)
+        
+    MADL.name = get_name(rig.name.split('.')[0])
     
     
     # PHYSICS
@@ -543,7 +545,7 @@ def writeMADL(filepath,MADL,bone_table,static_meshes,dynamic_meshes):
         madl.write(MADL.id.to_bytes(4, byteorder="little"))
         madl.write(MADL.version.to_bytes(4, byteorder="little"))
         madl.write(MADL.checksum.to_bytes(4, byteorder="little", signed=True))
-        madl.write(''.join(MADL.name).encode("utf-8"))
+        madl.write(''.join(MADL.name).encode())
         
         BonesSection = io.BytesIO(b'')
         for bone in bone_table:
