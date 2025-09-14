@@ -327,18 +327,19 @@ def main(self, context, filepath, add_tex, add_phy, add_anim, tex_type, vtfcmd_p
             parent_index = bones.index(bone.parent)
             bone_position = bone.head_local - bone.parent.head_local
 
-            euler_current = bone.matrix_local.to_euler()
-            euler_parent = bone.parent.matrix_local.to_euler()
+            euler_current = bone.matrix_local.to_quaternion()
+            euler_parent = bone.parent.matrix_local.to_quaternion()
             bone_angle = (
                 euler_current[0] - euler_parent[0],
                 euler_current[1] - euler_parent[1],
-                euler_current[2] - euler_parent[2]
+                euler_current[2] - euler_parent[2],
+                euler_current[3] - euler_parent[3]
             )
         else:
             parent_index = -1
             bone_position = bone.head_local
-            euler_current = bone.matrix_local.to_euler()
-            bone_angle = (euler_current[0], euler_current[1], euler_current[2])
+            euler_current = bone.matrix_local.to_quaternion()
+            bone_angle = (euler_current[0], euler_current[1], euler_current[2], euler_current[3])
 
         mbone = mbone_st()
         mbone.index = index
@@ -558,6 +559,7 @@ def writeMADL(filepath,MADL,bone_table,static_meshes,dynamic_meshes):
             BonesSection.write(struct.pack("<f", bone.bone_angle[0]))
             BonesSection.write(struct.pack("<f", bone.bone_angle[1]))
             BonesSection.write(struct.pack("<f", bone.bone_angle[2]))
+            BonesSection.write(struct.pack("<f", bone.bone_angle[3]))
         
         StaticMeshSection = io.BytesIO(b'')
         for stm in static_meshes:
@@ -846,7 +848,7 @@ class mbone_st:
     name = []
     parent = 0
     bone_position = mathutils.Vector((0.0, 0.0, 0.0))
-    bone_angle = mathutils.Euler((0.0, 0.0, 0.0),'XYZ')
+    bone_angle = mathutils.Quaternion((0.0, 0.0, 0.0, 0.0))
     
 class mstmesh_st:
     struct_size = 0

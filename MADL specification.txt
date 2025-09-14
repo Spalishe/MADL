@@ -19,13 +19,13 @@ struct madl_st {
 	int				dynamic_mesh_offset;				// See mdynmesh_st.
 }
 
-// Exactly 64 bytes
+// Exactly 68 bytes
 struct mbone_st {
 	int				index;								// Bone index.
 	char			name[32];							// Bone name, padding with null bytes.
 	int				parent;								// Bone parent index, -1 for no parent, means its a base bone
 	Vector			bone_position;						// Bone position relative to parent bone.
-	Euler			bone_angle;							// Bone rotation relative to parent bone.
+	Quaternion			bone_angle;							// Bone rotation relative to parent bone.
 } 
 
 struct mstmesh_st {
