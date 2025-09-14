@@ -1,0 +1,126 @@
+// This is a simplified version of MADL format.
+// It will contain bone structure, static meshes, dynamic meshes, physics data, animation data
+// It will not split models by materials, so you should do it yourself
+// It will not contain any texture data
+
+struct mals_st {
+	int 	id		// Model format id, must be "MALS"
+	int	version		// Format version, now is 1
+	char 	name[32]	// The internal name of the model, padding with null bytes.
+				// Typically "my_model.mals" will have an internal name of "my_model"
+
+	int	bone_count;							// Number of data sections.
+	int	bone_offset;						// Offset to first mbone_st.
+	
+	int	static_mesh_count;
+	int	static_mesh_offset; 				// See mstmesh_st.
+	
+	int	dynamic_mesh_count;
+	int	dynamic_mesh_offset;				// See mdynmesh_st.
+
+	int	phy_count;	// Number of data sections.
+	int	phy_offset;	// Offset to first mphysdata_st.
+
+    	int numSequences;   // Number of animation sequences
+    	int seqOffset;      // Offset from start of file to the first manimseq_st
+}
+
+// Exactly 68 bytes
+struct mbone_st {
+	int				index;								// Bone index.
+	char			name[32];							// Bone name, padding with null bytes.
+	int				parent;								// Bone parent index, -1 for no parent, means its a base bone
+	Vector			bone_position;						// Bone position relative to parent bone.
+	Quaternion			bone_angle;							// Bone rotation relative to parent bone.
+} 
+
+struct mstmesh_st {
+	int				struct_size							// This struct size, without this variable
+	int				index;								// Static mesh index.
+	char			name[32];							// Static mesh name, padding with null bytes.
+	byte			parented;							// Is parented to the bone, 0 if not, anything else is true.
+	int				boneIndex;							// Parented bone index, 0 if mesh not parented.
+	Vector			position;							// Static mesh position relative to origin, (0,0,0) if parented.
+	Euler			angle;								// Static mesh rotation relative to origin, (0,0,0) if parented.
+	int				vertices_count;						// Static mesh vertices count.
+	m_stvert_st		vertices[vertices_count];			// Vertices data.
+	byte			texture								// Texture index, -1 if no those
+}
+
+// Exactly 32 bytes
+struct m_stvert_st {
+	Vector			vert_position;						// Vertex Position.
+	Vector			vert_normal;						// Vertex Normal.
+	Vector2D		vert_textcord;						// Vertex Texture Coordinates.
+}
+
+struct mdynvert_st {
+	int				struct_size							// This struct size, without this variable
+	byte			numbones;							// Count of bones.
+	float			weight[numbones];					// Vertex weights per each bone.
+	int				bone[numbones];						// Bones indexes.
+	Vector			vert_position;						// Vertex Position.
+	Vector			vert_normal;						// Vertex Normal.
+	Vector2D		vert_textcord;						// Vertex Texture Coordinates.
+}
+
+struct mdynmesh_st {
+	int				struct_size							// This struct size, without this variable
+	int				index;								// Dynamic mesh index.
+	char			name[32];							// Dynamic mesh name, padding with null bytes.
+	int				vertices_count;						// Dynamic mesh vertices count.
+	mdynvert_st		vertices[vertices_count];			// Vertices data.
+	byte			texture								// Texture index, -1 if no those
+}
+
+struct mphysdata_st {
+	int				struct_size							// This struct size, without this variable
+	int				index;								// Physic mesh index.
+	char			name[32];							// Physic mesh name, padding with null bytes.
+	byte			parented;							// Is parented to the bone, 0 if not, anything else is true.
+	int				boneIndex;							// Parented bone index, 0 if mesh not parented.
+	Vector			position;							// Physic mesh position relative to origin, (0,0,0) if parented.
+	Euler			angle;								// Physic mesh rotation relative to origin, (0,0,0) if parented.
+	int				vertices_count;						// Physic mesh vertices count.
+	Vector			vertices[vertices_count];			// Vertices positions.
+}
+
+struct manimseq_st {
+    int index;          // Animation sequence index
+    char name[32];      // Animation sequence name (null-padded)
+    int numFrames;      // Number of frames in the sequence
+    byte fps;           // Playback speed in frames per second
+
+    manimdata_st frames[numFrames];     // Array of frames (manimdata_st)
+};
+
+struct manimdata_st {
+    // For each bone in the model (total defined in madl_st.bone_count),
+    // animation keyframe data is stored using delta encoding.
+    // The array size here is a placeholder; the actual size is determined at runtime.
+
+	short frame;		// Self-Explanatory
+    	mbonepos_t bone[1]; // Array of bone animation data (actual size equals madl_st.bone_count)
+};
+
+struct mbonepos_t {
+	// Note: if this is the first frame, position/rotation is local to rest pos
+    byte flags;     // Bit mask: indicates which channels (position/rotation) are animated, see MBONEFLAGS
+	byte boneIndex; // Bone index																					 
+    short posX;     // Quantized delta for X-axis position
+    short posY;     // Quantized delta for Y-axis position
+    short posZ;     // Quantized delta for Z-axis position
+    short rotX;     // Quantized delta for rotation around X-axis
+    short rotY;     // Quantized delta for rotation around Y-axis
+    short rotZ;     // Quantized delta for rotation around Z-axis
+};
+
+enum MBONEFLAGS {
+	NOCHANGES = 0x0, 	 // No bone changes, actually there is no mbonepos_t record if this flag equal 0x0, but it existence is not excluded
+	POSX	  = 0x1, 	 // X position changed
+	POSY	  = 0x2, 	 // Y position changed
+	POSZ	  = 0x4, 	 // Z position changed
+	ROTX	  = 0x8, 	 // X rotation changed
+	ROTY	  = 0x10,	 // Y rotation changed
+	ROTZ	  = 0x20,	 // Z rotation changed
+}
